@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "gpio.h": "c"
+    },
+    "C_Cpp.default.compilerPath": "/home/marcuswrrn/.platformio/packages/toolchain-xtensa-esp-elf/bin/xtensa-esp32s3-elf-gcc"
+}
