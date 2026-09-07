@@ -13,7 +13,7 @@ static const char* TAG = "SSD1306";
 
 static const uint8_t display_width = 128;
 static const uint8_t display_height = 64;
-static uint16_t display_buffer_size = (uint16_t)display_width * (uint16_t)display_height / 2;
+static uint16_t display_buffer_size = (uint16_t)display_width * (uint16_t)display_height / 8;
 
 static const DISPLAY_GEOMETRY geometry = GEOMETRY_128_64;
 static DISPLAY_ANGLE rotate_angle = ANGLE_0_DEGREE;
@@ -306,7 +306,7 @@ esp_err_t display_set_pixel(int16_t x, int16_t y) {
 }
 
 esp_err_t utf8ascii(char* str_buffer, char* str, uint16_t str_len) {
-    if (str_len > STR_BUFFER_SIZE) {
+    if (str_len >= STR_BUFFER_SIZE) {
         ESP_LOGE(TAG, "Input String exceeds maximum buffer size");
         return ESP_ERR_INVALID_SIZE;
     }
@@ -379,7 +379,7 @@ void display_draw_internal(int16_t x_move, int16_t y_move, int16_t width, int16_
 void display_draw_string_internal(int16_t x_move, int16_t y_move, char* text, uint16_t text_len, uint16_t text_width) {
     uint8_t text_height = font_data[SSD1306_HEIGHT_POS];
     uint8_t first_char = font_data[SSD1306_FIRST_CHAR_POS];
-    uint8_t size_of_jump_table = font_data[SSD1306_CHAR_NUM_POS] * SSD1306_JUMPTABLE_BYTES;
+    uint16_t size_of_jump_table = font_data[SSD1306_CHAR_NUM_POS] * SSD1306_JUMPTABLE_BYTES;
 
     uint16_t cursor_x = 0;
     uint16_t cursor_y = 0;

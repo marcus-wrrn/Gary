@@ -20,8 +20,7 @@
 // Display Commands
 #define SSD1306_CHARGEPUMP              0x8D
 #define SSD1306_COLUMNADDR              0x21
-#define SSD1306_PAGEADDR                0x22
-#define SSD1406_SETPAGEADDRESS          0x24
+#define SSD1306_SETPAGEADDRESS          0x24
 #define SSD1306_COMSCANDEC              0xC8
 #define SSD1306_COMSCANINC              0xC0
 #define SSD1306_DISPLAYALLON            0xA5
