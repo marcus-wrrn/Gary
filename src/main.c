@@ -45,7 +45,7 @@ void app_main() {
         return;
     }
 
-    char str[] = "Hello World\nMeep?";
+    char str[] = "Hello World";
     display_draw_string(0, 0, str, strlen(str));
 
     err = display_draw();

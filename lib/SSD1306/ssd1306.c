@@ -423,6 +423,7 @@ void display_draw_string_internal(int16_t x_move, int16_t y_move, char* text, ui
                 uint16_t char_data_pos = SSD1306_JUMPTABLE_START + size_of_jump_table + ((msb_jump_to_char << 8) + lsb_jump_to_char);
                 display_draw_internal(x_pos, y_pos, current_char_width, text_height, font_data, char_data_pos, char_byte_size);
             }
+            cursor_x += current_char_width;
         }
     }
 }
