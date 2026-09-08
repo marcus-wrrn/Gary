@@ -32,14 +32,6 @@ void app_main() {
         return;
     }
 
-    // // initalize Vext
-    // err = gpio_set_level(VEXT_PIN, 0);
-    // if (err != ESP_OK) {
-    //     ESP_LOGE(TAG, "Unable to turn on external voltage pin");
-    //     return;
-    // }
-    // vTaskDelay(pdMS_TO_TICKS(100));
-
     err = display_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize display");
@@ -51,8 +43,6 @@ void app_main() {
         err = gpio_adc_oneshot_read(MOISTURE_SENSOR_CHANNEL, &moisture_level);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Invalid read of moisture sensor");
-        } else {
-            ESP_LOGI(TAG, "Moisture Level: %d", moisture_level);
         }
 
         int len = snprintf(disp_buffer, sizeof(disp_buffer), "Moisture Level: %d", moisture_level);
@@ -62,5 +52,4 @@ void app_main() {
         
         vTaskDelay(pdMS_TO_TICKS(100));
     }
-    
 }

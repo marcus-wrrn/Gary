@@ -149,7 +149,7 @@ void display_reset(void) {
 
 esp_err_t display_draw(void) {
 #ifdef DISPLAY_DOUBLE_BUFFER
-    ESP_LOGI(TAG, "Drawing Buffer");
+    // ESP_LOGI(TAG, "Drawing Buffer");
     uint8_t min_bound_y = UINT8_MAX;
     uint8_t max_bound_y = 0;
 
@@ -239,7 +239,7 @@ esp_err_t display_draw(void) {
             return err;
         }
     }
-    ESP_LOGI(TAG, "Finished display");
+    // ESP_LOGI(TAG, "Finished display");
     return ESP_OK;
 }
 #else

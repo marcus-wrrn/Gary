@@ -5,7 +5,7 @@
 /// https://github.com/HelTecAutomation/Heltec_ESP32
 
 
-#define SSD1306_ADDRESS 0x3C // potentially 0x75
+#define SSD1306_ADDRESS 0x3C
 
 #ifndef DISPLAY_REDUCE_MEMORY
 #define DISPLAY_DOUBLE_BUFFER
