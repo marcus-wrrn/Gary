@@ -6,6 +6,7 @@
 #include "ssd1306.h"
 
 static const char* TAG = "INIT";
+static char disp_buffer[128];
 
 void app_main() {
 #if !DEVELOPMENT
@@ -31,13 +32,13 @@ void app_main() {
         return;
     }
 
-    // initalize Vext
-    err = gpio_set_level(VEXT_PIN, 0);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Unable to turn on external voltage pin");
-        return;
-    }
-    vTaskDelay(pdMS_TO_TICKS(100));
+    // // initalize Vext
+    // err = gpio_set_level(VEXT_PIN, 0);
+    // if (err != ESP_OK) {
+    //     ESP_LOGE(TAG, "Unable to turn on external voltage pin");
+    //     return;
+    // }
+    // vTaskDelay(pdMS_TO_TICKS(100));
 
     err = display_init();
     if (err != ESP_OK) {
@@ -45,24 +46,21 @@ void app_main() {
         return;
     }
 
-    char str[] = "Hello World";
-    display_draw_string(0, 0, str, strlen(str));
+    int moisture_level = 0;
+    while (1) {
+        err = gpio_adc_oneshot_read(MOISTURE_SENSOR_CHANNEL, &moisture_level);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Invalid read of moisture sensor");
+        } else {
+            ESP_LOGI(TAG, "Moisture Level: %d", moisture_level);
+        }
 
-    err = display_draw();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to draw to display");
-        return;
+        int len = snprintf(disp_buffer, sizeof(disp_buffer), "Moisture Level: %d", moisture_level);
+        clear_display();
+        display_draw_string(0, 0, disp_buffer, len);
+        display_draw();
+        
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
-
-    // int moisture_level = 0;
-    // while (1) {
-    //     err = gpio_adc_oneshot_read(MOISTURE_SENSOR_CHANNEL, &moisture_level);
-    //     if (err != ESP_OK) {
-    //         ESP_LOGE(TAG, "Invalid read of moisture sensor");
-    //     } else {
-    //         ESP_LOGI(TAG, "Moisture Level: %d", moisture_level);
-    //     }
-    //     vTaskDelay(pdMS_TO_TICKS(100));
-    // }
     
 }

@@ -20,7 +20,6 @@
 // Display Commands
 #define SSD1306_CHARGEPUMP              0x8D
 #define SSD1306_COLUMNADDR              0x21
-#define SSD1306_SETPAGEADDRESS          0x24
 #define SSD1306_COMSCANDEC              0xC8
 #define SSD1306_COMSCANINC              0xC0
 #define SSD1306_DISPLAYALLON            0xA5
@@ -95,3 +94,4 @@ void display_reset();
 void display_draw_string(int16_t x_move, int16_t y_move, char* str, uint16_t str_len);
 esp_err_t display_set_pixel(int16_t x, int16_t y);
 esp_err_t display_draw(void);
+void clear_display(void);
