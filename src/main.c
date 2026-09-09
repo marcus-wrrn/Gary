@@ -3,6 +3,7 @@
 #include "esp_log.h"
 #include "gpio.h"
 #include "i2c.h"
+#include "i2s.h"
 #include "ssd1306.h"
 #include "plant_state.h"
 
@@ -29,19 +30,40 @@ void app_main() {
 
     err = i2c_init();
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize I2c");
+        ESP_LOGE(TAG, "Failed to initialize I2C");
         return;
     }
 
+    err = i2s_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize I2S");
+        return;
+    }
+    ESP_LOGI(TAG, "Playing startup tone");
+    err = i2s_play_beep(440, 500);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to play startup tone: %s", esp_err_to_name(err));
+    }
+
+    // A dead display shouldn't take the rest of the program down with it.
     err = display_init();
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize display");
-        return;
+        ESP_LOGE(TAG, "Failed to initialize display, continuing without it");
     }
 
     int moisture_level = 0;
+    int ticks_since_beep = 0;
     PlantState state = plant_get_current_state();
     while (1) {
+        if (ticks_since_beep++ >= 30) {
+            ticks_since_beep = 0;
+            ESP_LOGI(TAG, "Playing test tone");
+            err = i2s_play_beep(440, 500);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to play tone: %s", esp_err_to_name(err));
+            }
+        }
+
         // decide moves based on current state
 
         // gather information

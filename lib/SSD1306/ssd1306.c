@@ -172,7 +172,7 @@ esp_err_t display_draw(void) {
     }
 
     if (min_bound_y == UINT8_MAX) {
-        ESP_LOGI(TAG, "Min Y bound exceeded");
+        // back buffer is the same as current buffer -> nothing to change
         return ESP_OK;
     };
 
@@ -458,7 +458,6 @@ void display_draw_string(int16_t x_move, int16_t y_move, char* str, uint16_t str
     char* text_part = strtok(str_buffer, "\n");
     
     while (text_part != NULL) {
-        ESP_LOGI(TAG, "Drawing: %s", text_part);
         uint16_t str_length = strlen(text_part);
         uint16_t string_width = get_string_width(text_part, str_length);
         display_draw_string_internal(x_move, y_move - y_offset + line * line_height, text_part, str_length, string_width);
