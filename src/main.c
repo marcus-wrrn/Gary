@@ -4,6 +4,7 @@
 #include "gpio.h"
 #include "i2c.h"
 #include "ssd1306.h"
+#include "plant_state.h"
 
 static const char* TAG = "INIT";
 static char disp_buffer[128];
@@ -39,11 +40,21 @@ void app_main() {
     }
 
     int moisture_level = 0;
+    PlantState state = plant_get_current_state();
     while (1) {
+        // decide moves based on current state
+
+        // gather information
+
+        // update display, sound and other tasks
+        
+
+
         err = gpio_adc_oneshot_read(MOISTURE_SENSOR_CHANNEL, &moisture_level);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Invalid read of moisture sensor");
         }
+        
 
         int len = snprintf(disp_buffer, sizeof(disp_buffer), "Moisture Level: %d", moisture_level);
         clear_display();
