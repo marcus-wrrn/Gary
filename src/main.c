@@ -1,14 +1,32 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "gpio.h"
 #include "i2c.h"
 #include "i2s.h"
 #include "ssd1306.h"
 #include "plant_state.h"
 
+#define DEBOUNCE_DELAY_US 200000ULL
+
 static const char* TAG = "INIT";
 static char disp_buffer[128];
+
+static volatile uint64_t last_isr_time = 0;
+static QueueHandle_t button_queue;
+
+static void IRAM_ATTR button_isr(void *arg) {
+    uint64_t now = esp_timer_get_time();
+    if (now - last_isr_time > DEBOUNCE_DELAY_US) {
+        bool flag = true;
+        BaseType_t higher_priority_task_woken = pdFALSE;
+        xQueueSendFromISR(button_queue, &flag, &higher_priority_task_woken);
+        last_isr_time = now;
+        portYIELD_FROM_ISR(higher_priority_task_woken);
+    }
+}
+
 
 void app_main() {
 #if !DEVELOPMENT
@@ -27,6 +45,11 @@ void app_main() {
         ESP_LOGE(TAG, "Failed to initialize ADC closing program");
         return;
     }
+
+    button_queue = xQueueCreate(10, sizeof(bool));
+    gpio_install_isr_service(0);
+    gpio_isr_handler_add(TEST_BUTTON_PIN, button_isr, NULL);
+    bool button_flag;
 
     err = i2c_init();
     if (err != ESP_OK) {
@@ -55,9 +78,7 @@ void app_main() {
     int ticks_since_beep = 0;
     PlantState state = plant_get_current_state();
     while (1) {
-        if (ticks_since_beep++ >= 30) {
-            ticks_since_beep = 0;
-            ESP_LOGI(TAG, "Playing test tone");
+        if (xQueueReceive(button_queue, &button_flag, 0)) {
             err = i2s_play_beep(440, 500);
             if (err != ESP_OK) {
                 ESP_LOGE(TAG, "Failed to play tone: %s", esp_err_to_name(err));
