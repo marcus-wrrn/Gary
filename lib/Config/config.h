@@ -27,10 +27,14 @@
 #define SPI_SCLK_PIN            GPIO_NUM_36
 #define SPI_CS_PIN              GPIO_NUM_34
 #else
-
-#define SSD1306_RST_PIN         GPIO_NUM_21
+// Digital / analog IO
+#define SSD1306_RST_PIN         GPIO_NUM_2
 #define TEST_BUTTON_PIN         GPIO_NUM_3
-#define MOISTURE_SENSOR_CHANNEL ADC_CHANNEL_3
+#define MOISTURE_SENSOR_CHANNEL ADC_CHANNEL_0   // GPIO1
+
+// I2C (display)
+#define I2C_DISPLAY_SDA_PIN     GPIO_NUM_41
+#define I2C_DISPLAY_SCL_PIN     GPIO_NUM_42
 
 // I2S (speaker)
 #define I2S_BCLK_PIN            GPIO_NUM_14

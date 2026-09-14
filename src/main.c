@@ -3,10 +3,12 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "gpio.h"
-#include "i2c.h"
+// #include "i2c.h"
 #include "i2s.h"
-#include "ssd1306.h"
+// #include "ssd1306.h"
 #include "plant_state.h"
+#include "sd_card.h"
+#include "lvgl.h"
 
 #define DEBOUNCE_DELAY_US 200000ULL
 
@@ -51,11 +53,11 @@ void app_main() {
     gpio_isr_handler_add(TEST_BUTTON_PIN, button_isr, NULL);
     bool button_flag;
 
-    err = i2c_init();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize I2C");
-        return;
-    }
+    // err = i2c_init();
+    // if (err != ESP_OK) {
+    //     ESP_LOGE(TAG, "Failed to initialize I2C");
+    //     return;
+    // }
 
     err = i2s_init();
     if (err != ESP_OK) {
@@ -68,15 +70,34 @@ void app_main() {
         ESP_LOGE(TAG, "Failed to play startup tone: %s", esp_err_to_name(err));
     }
 
-    // A dead display shouldn't take the rest of the program down with it.
-    err = display_init();
+    // // A dead display shouldn't take the rest of the program down with it.
+    // err = display_init();
+    // if (err != ESP_OK) {
+    //     ESP_LOGE(TAG, "Failed to initialize display, continuing without it");
+    // }
+
+    err = sd_card_init();
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize display, continuing without it");
+        ESP_LOGE(TAG, "Failed to initialize SD card");
+        return;
     }
+
+
 
     int moisture_level = 0;
     int ticks_since_beep = 0;
     PlantState state = plant_get_current_state();
+
+    size_t file_size = 0;
+    char * file_name = "eye.jpg";
+    err = sd_card_get_file_size(file_name, &file_size);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Unable to read file");
+    } else {
+        ESP_LOGI(TAG, "File size is: %d", file_size);
+    }
+
+
     while (1) {
         if (xQueueReceive(button_queue, &button_flag, 0)) {
             err = i2s_play_beep(440, 500);
@@ -99,10 +120,10 @@ void app_main() {
         }
         
 
-        int len = snprintf(disp_buffer, sizeof(disp_buffer), "Moisture Level: %d", moisture_level);
-        clear_display();
-        display_draw_string(0, 0, disp_buffer, len);
-        display_draw();
+        // int len = snprintf(disp_buffer, sizeof(disp_buffer), "Moisture Level: %d", moisture_level);
+        // clear_display();
+        // display_draw_string(0, 0, disp_buffer, len);
+        // display_draw();
         
         vTaskDelay(pdMS_TO_TICKS(100));
     }
