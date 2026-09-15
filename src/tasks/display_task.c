@@ -16,6 +16,7 @@ static const char* TAG = "DISPLAY_TASK";
 QueueHandle_t display_queue = NULL;
 
 static void display_handle_message(const struct display_task_data_t* msg) {
+    ESP_LOGI(TAG, "Animation state: %d", msg->play_animation);
     display_set_eye_animation(msg->play_animation);
 }
 

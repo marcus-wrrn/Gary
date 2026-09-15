@@ -8,7 +8,7 @@
 #include "src/draw/sw/lv_draw_sw_utils.h"
 
 // Must stay within max_transfer_sz in spi_init(), since each flush is sent as one transaction
-#define DISPLAY_DRAW_BUF_SIZE (DISPLAY_H_RES * 16 * 2)
+#define DISPLAY_DRAW_BUF_SIZE (DISPLAY_H_RES * 48 * 2)
 
 static const char* TAG = "DISPLAY";
 static lv_display_t* display = NULL;

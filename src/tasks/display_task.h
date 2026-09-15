@@ -4,9 +4,9 @@
 #include "freertos/queue.h"
 #include "esp_err.h"
 
-struct display_task_data_t {
+typedef struct display_task_data_t {
     bool play_animation;
-};
+} display_task_data_t;
 
 // queue for passing information to the display
 extern QueueHandle_t display_queue;

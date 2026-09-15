@@ -22,7 +22,7 @@ esp_err_t spi_init() {
         .sclk_io_num = SPI_SCK_PIN,
         .quadhd_io_num = -1,
         .quadwp_io_num = -1,
-        .max_transfer_sz = 16 * 240 * 2 + 8
+        .max_transfer_sz = 48 * 240 * 2
     };
 
     esp_err_t err = spi_bus_initialize(SPI2_HOST, &bus_config, SPI_DMA_CH_AUTO);
@@ -32,7 +32,7 @@ esp_err_t spi_init() {
     }
 
     spi_device_interface_config_t dev_config = {
-        .clock_speed_hz = 10 * 1000 * 1000,
+        .clock_speed_hz = 18 * 1000 * 1000,
         .mode = 0,
         .spics_io_num = SPI_CS_PIN,
         .queue_size = 7,

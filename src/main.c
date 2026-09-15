@@ -31,7 +31,6 @@ static void IRAM_ATTR button_isr(void *arg) {
     }
 }
 
-
 void app_main() {
 #if !DEVELOPMENT
     esp_log_level_set("*", ESP_LOG_NONE);
@@ -90,13 +89,20 @@ void app_main() {
     int moisture_level = 0;
     int ticks_since_beep = 0;
     PlantState state = plant_get_current_state();
+    bool play_animation = true;
 
     while (1) {
         if (xQueueReceive(button_queue, &button_flag, 0)) {
-            err = i2s_play_beep(440, 500);
-            if (err != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to play tone: %s", esp_err_to_name(err));
-            }
+            //err = i2s_play_beep(440, 500);
+            // if (err != ESP_OK) {
+            //     ESP_LOGE(TAG, "Failed to play tone: %s", esp_err_to_name(err));
+            // }
+            play_animation = !play_animation;
+            display_task_data_t anim = {
+                .play_animation = play_animation
+            };
+            xQueueSendToBack(display_queue, &anim, 0);
+            ESP_LOGI(TAG, "Button pressed");
         }
 
         // decide moves based on current state
@@ -110,6 +116,7 @@ void app_main() {
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Invalid read of moisture sensor");
         }
+        ESP_LOGI(TAG, "Moisture Level: %d", moisture_level);
         
 
         // int len = snprintf(disp_buffer, sizeof(disp_buffer), "Moisture Level: %d", moisture_level);

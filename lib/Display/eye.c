@@ -23,9 +23,9 @@
 // Blink: the inner lid line (EYE_LID_CREASE) bows down until it lies on the bottom lid, then lifts
 // again. The top arc stays put, so the moving line never crosses it. Blinks only start once the pupil
 // has reached either end of its path, and the pupil waits there until the blink has finished.
-#define EYE_BLINK_DOWN_MS  200   // closing
+#define EYE_BLINK_DOWN_MS  500   // closing
 #define EYE_BLINK_HOLD_MS  560   // held closed
-#define EYE_BLINK_UP_MS    300   // opening
+#define EYE_BLINK_UP_MS    500   // opening
 #define EYE_BLINK_PAUSE_MS 1500  // minimum pupil travel time (legs plus pauses) between blinks
 
 enum { EYE_LID_UPPER, EYE_LID_CREASE, EYE_LID_LOWER, EYE_LID_COUNT };
@@ -151,7 +151,7 @@ static void eye_start_blink() {
     lv_anim_set_duration(&blink, EYE_BLINK_DOWN_MS);
     lv_anim_set_reverse_duration(&blink, EYE_BLINK_UP_MS);
     lv_anim_set_reverse_delay(&blink, EYE_BLINK_HOLD_MS);
-    lv_anim_set_path_cb(&blink, lv_anim_path_ease_in_out);
+    lv_anim_set_path_cb(&blink, lv_anim_path_linear);
     lv_anim_set_completed_cb(&blink, eye_blink_done_cb);
     lv_anim_start(&blink);
 }
