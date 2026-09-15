@@ -15,7 +15,6 @@
 #define DEBOUNCE_DELAY_US 200000ULL
 
 static const char* TAG = "INIT";
-static char disp_buffer[128];
 
 static volatile uint64_t last_isr_time = 0;
 static QueueHandle_t button_queue;
@@ -87,7 +86,6 @@ void app_main() {
     }
 
     int moisture_level = 0;
-    int ticks_since_beep = 0;
     PlantState state = plant_get_current_state();
     bool play_animation = true;
 
