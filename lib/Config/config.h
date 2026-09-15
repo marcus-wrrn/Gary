@@ -46,4 +46,11 @@
 #define SDMMC_CLK_PIN           GPIO_NUM_39
 #define SDMMC_D0_PIN            GPIO_NUM_40
 
+#define SPI_CS_PIN              GPIO_NUM_10
+#define SPI_SCK_PIN             GPIO_NUM_12
+#define SPI_MOSI_PIN            GPIO_NUM_11
+#define SPI_MISO_PIN            GPIO_NUM_13
+#define SPI_DISPLAY_DC_PIN      GPIO_NUM_9
+#define DISPLAY_RST_PIN         GPIO_NUM_8
+
 #endif

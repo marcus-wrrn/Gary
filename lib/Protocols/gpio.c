@@ -38,6 +38,8 @@ esp_err_t gpio_init_digital() {
 #ifdef HELTEC_BOARD
     // Vext only exists on the Heltec board
     output_pins |= (1ULL << VEXT_PIN);
+#else
+    output_pins |= (1ULL << SPI_DISPLAY_DC_PIN) | (1ULL << DISPLAY_RST_PIN);
 #endif
 
     gpio_config_t io_conf = {
