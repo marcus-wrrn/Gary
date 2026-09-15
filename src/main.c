@@ -10,6 +10,7 @@
 #include "sd_card.h"
 #include "spi.h"
 #include "display.h"
+#include "eye.h"
 
 #define DEBOUNCE_DELAY_US 200000ULL
 
@@ -94,7 +95,9 @@ void app_main() {
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize display, continuing without it");
     } else {
-        display_show_image("S:plant/eye_240.jpg");
+        //display_show_image("S:plant/eye.jpg");
+        //display_show_test_pattern();
+        display_draw_eye();
     }
 
     int moisture_level = 0;

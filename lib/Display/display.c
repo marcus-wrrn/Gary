@@ -43,11 +43,14 @@ esp_err_t display_init() {
     lv_init();
     lv_tick_set_cb(display_tick_cb);
 
-    display = lv_ili9341_create(DISPLAY_H_RES, DISPLAY_V_RES, LV_LCD_FLAG_BGR, display_send_cmd, display_send_color);
+    display = lv_ili9341_create(DISPLAY_H_RES, DISPLAY_V_RES, LV_LCD_FLAG_NONE, display_send_cmd, display_send_color);
     if (display == NULL) {
         ESP_LOGE(TAG, "Failed to create ILI9341 display");
         return ESP_FAIL;
     }
+    // This module scans with rows and columns transposed and RGB order compared to
+    // LVGL's ILI9341 defaults, so set MADCTL's swap bit and leave BGR off.
+    lv_lcd_generic_mipi_set_address_mode(display, false, false, true, false);
 
     uint8_t* draw_buf = heap_caps_malloc(DISPLAY_DRAW_BUF_SIZE, MALLOC_CAP_DMA);
     if (draw_buf == NULL) {
@@ -75,6 +78,25 @@ esp_err_t display_show_image(const char* path) {
     //lv_obj_set_style_bg_color(screen, lv_color_hex(0xffffff), 0);
     lv_obj_t* img = lv_image_create(screen);
     lv_image_set_src(img, path);
-    // lv_obj_center(img);
+    lv_obj_center(img);
+    return ESP_OK;
+}
+
+static void display_draw_rect(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t rgb) {
+    lv_obj_t* rect = lv_obj_create(lv_screen_active());
+    lv_obj_remove_style_all(rect);
+    lv_obj_set_pos(rect, x, y);
+    lv_obj_set_size(rect, w, h);
+    lv_obj_set_style_bg_color(rect, lv_color_hex(rgb), 0);
+    lv_obj_set_style_bg_opa(rect, LV_OPA_COVER, 0);
+}
+
+esp_err_t display_show_test_pattern() {
+    if (display == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    display_draw_rect(0, 0, 40, 120, 0xFF0000);
+    display_draw_rect(DISPLAY_H_RES - 120, DISPLAY_V_RES - 40, 120, 40, 0x00FF00);
     return ESP_OK;
 }
