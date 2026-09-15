@@ -8,6 +8,7 @@
 // #include "ssd1306.h"
 #include "plant_state.h"
 #include "sd_card.h"
+#include "spi.h"
 #include "lvgl.h"
 
 #define DEBOUNCE_DELAY_US 200000ULL
@@ -82,14 +83,18 @@ void app_main() {
         return;
     }
 
-
+    err = spi_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize SPI");
+        return;
+    }
 
     int moisture_level = 0;
     int ticks_since_beep = 0;
     PlantState state = plant_get_current_state();
 
     size_t file_size = 0;
-    char * file_name = "eye.jpg";
+    char * file_name = "plant/eye.jpg";
     err = sd_card_get_file_size(file_name, &file_size);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Unable to read file");
