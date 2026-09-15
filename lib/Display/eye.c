@@ -21,10 +21,12 @@
 #define EYE_LOOK_PAUSE_MS 400
 
 // Blink: the inner lid line (EYE_LID_CREASE) bows down until it lies on the bottom lid, then lifts
-// again. The top arc stays put, so the moving line never crosses it.
-#define EYE_BLINK_MS       200
-#define EYE_BLINK_HOLD_MS  60
-#define EYE_BLINK_PAUSE_MS 3000
+// again. The top arc stays put, so the moving line never crosses it. Blinks only start once the pupil
+// has reached either end of its path, and the pupil waits there until the blink has finished.
+#define EYE_BLINK_DOWN_MS  200   // closing
+#define EYE_BLINK_HOLD_MS  560   // held closed
+#define EYE_BLINK_UP_MS    300   // opening
+#define EYE_BLINK_PAUSE_MS 1500  // minimum pupil travel time (legs plus pauses) between blinks
 
 enum { EYE_LID_UPPER, EYE_LID_CREASE, EYE_LID_LOWER, EYE_LID_COUNT };
 
@@ -37,8 +39,8 @@ static struct {
     lv_obj_t* blink_lid;
     lv_obj_t* pupil_clip;
     lv_obj_t* pupil;
-    lv_anim_t* look_anim;
-    lv_anim_t* blink_anim;
+    int32_t look_to;         // end the current pupil leg heads for: -1000 (left) or 1000 (right)
+    uint32_t since_blink_ms; // pupil travel time since the last blink
     float pupil_x;
     float pupil_y;
     float lid_h;  // signed: positive bows up, negative bows down
@@ -132,6 +134,55 @@ static void eye_blink_anim_cb(void* var, int32_t v) {
     eye_update_pupil();
 }
 
+static void eye_start_look(uint32_t delay_ms);
+
+static void eye_blink_done_cb(lv_anim_t* a) {
+    LV_UNUSED(a);
+    eye_start_look(0);
+}
+
+// One close-hold-open cycle; the pupil's next leg is started from its completion
+static void eye_start_blink() {
+    lv_anim_t blink;
+    lv_anim_init(&blink);
+    lv_anim_set_var(&blink, eye_state.blink_lid);
+    lv_anim_set_exec_cb(&blink, eye_blink_anim_cb);
+    lv_anim_set_values(&blink, 0, 1000);
+    lv_anim_set_duration(&blink, EYE_BLINK_DOWN_MS);
+    lv_anim_set_reverse_duration(&blink, EYE_BLINK_UP_MS);
+    lv_anim_set_reverse_delay(&blink, EYE_BLINK_HOLD_MS);
+    lv_anim_set_path_cb(&blink, lv_anim_path_ease_in_out);
+    lv_anim_set_completed_cb(&blink, eye_blink_done_cb);
+    lv_anim_start(&blink);
+}
+
+// Runs when the pupil reaches an end of its path: blink there if one is due, otherwise head back
+static void eye_look_done_cb(lv_anim_t* a) {
+    LV_UNUSED(a);
+    eye_state.look_to = -eye_state.look_to;
+    eye_state.since_blink_ms += EYE_LOOK_MS + EYE_LOOK_PAUSE_MS;
+    if (eye_state.since_blink_ms >= EYE_BLINK_PAUSE_MS) {
+        eye_state.since_blink_ms = 0;
+        eye_start_blink();
+    } else {
+        eye_start_look(EYE_LOOK_PAUSE_MS);
+    }
+}
+
+// A single leg from the current end of the pupil path to eye_state.look_to
+static void eye_start_look(uint32_t delay_ms) {
+    lv_anim_t anim;
+    lv_anim_init(&anim);
+    lv_anim_set_var(&anim, eye_state.pupil);
+    lv_anim_set_exec_cb(&anim, eye_pupil_anim_cb);
+    lv_anim_set_values(&anim, -eye_state.look_to, eye_state.look_to);
+    lv_anim_set_duration(&anim, EYE_LOOK_MS);
+    lv_anim_set_delay(&anim, delay_ms);
+    lv_anim_set_path_cb(&anim, lv_anim_path_ease_in_out);
+    lv_anim_set_completed_cb(&anim, eye_look_done_cb);
+    lv_anim_start(&anim);
+}
+
 esp_err_t display_draw_eye() {
     if (lv_display_get_default() == NULL) {
         return ESP_ERR_INVALID_STATE;
@@ -167,32 +218,10 @@ esp_err_t display_draw_eye() {
     eye_blink_anim_cb(eye_state.blink_lid, 0);
     eye_pupil_anim_cb(pupil, -1000);
 
-    lv_anim_t blink;
-    lv_anim_init(&blink);
-    lv_anim_set_var(&blink, eye_state.blink_lid);
-    lv_anim_set_exec_cb(&blink, eye_blink_anim_cb);
-    lv_anim_set_values(&blink, 0, 1000);
-    lv_anim_set_duration(&blink, EYE_BLINK_MS);
-    lv_anim_set_reverse_duration(&blink, EYE_BLINK_MS);
-    lv_anim_set_reverse_delay(&blink, EYE_BLINK_HOLD_MS);
-    lv_anim_set_delay(&blink, EYE_BLINK_PAUSE_MS);
-    lv_anim_set_repeat_delay(&blink, EYE_BLINK_PAUSE_MS);
-    lv_anim_set_repeat_count(&blink, LV_ANIM_REPEAT_INFINITE);
-    lv_anim_set_path_cb(&blink, lv_anim_path_ease_in_out);
-    eye_state.blink_anim = lv_anim_start(&blink);
-
-    lv_anim_t anim;
-    lv_anim_init(&anim);
-    lv_anim_set_var(&anim, pupil);
-    lv_anim_set_exec_cb(&anim, eye_pupil_anim_cb);
-    lv_anim_set_values(&anim, -1000, 1000);
-    lv_anim_set_duration(&anim, EYE_LOOK_MS);
-    lv_anim_set_reverse_duration(&anim, EYE_LOOK_MS);
-    lv_anim_set_reverse_delay(&anim, EYE_LOOK_PAUSE_MS);
-    lv_anim_set_repeat_delay(&anim, EYE_LOOK_PAUSE_MS);
-    lv_anim_set_repeat_count(&anim, LV_ANIM_REPEAT_INFINITE);
-    lv_anim_set_path_cb(&anim, lv_anim_path_ease_in_out);
-    eye_state.look_anim = lv_anim_start(&anim);
+    // The pupil and blink animations chain into each other, so exactly one of them runs at a time
+    eye_state.look_to = 1000;
+    eye_state.since_blink_ms = 0;
+    eye_start_look(0);
 
     // Lashes point straight out from the lower lid's circle, spread along most of the lid
     float span = lower_half * 0.85f;
@@ -210,8 +239,14 @@ esp_err_t display_draw_eye() {
 }
 
 void display_set_eye_animation(bool play) {
-    // Both animations repeat forever, so the handles from lv_anim_start() stay valid
-    lv_anim_t* anims[] = {eye_state.look_anim, eye_state.blink_anim};
+    if (eye_state.pupil == NULL) {
+        return;
+    }
+    // Each leg and blink is a fresh one-shot animation, so look up whichever is currently running
+    lv_anim_t* anims[] = {
+        lv_anim_get(eye_state.pupil, eye_pupil_anim_cb),
+        lv_anim_get(eye_state.blink_lid, eye_blink_anim_cb),
+    };
     for (size_t i = 0; i < sizeof(anims) / sizeof(anims[0]); i++) {
         if (anims[i] == NULL) {
             continue;

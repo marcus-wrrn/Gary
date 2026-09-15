@@ -66,17 +66,6 @@ void app_main() {
         ESP_LOGE(TAG, "Failed to initialize I2S");
         return;
     }
-    ESP_LOGI(TAG, "Playing startup tone");
-    err = i2s_play_beep(440, 500);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to play startup tone: %s", esp_err_to_name(err));
-    }
-
-    // // A dead display shouldn't take the rest of the program down with it.
-    // err = display_init();
-    // if (err != ESP_OK) {
-    //     ESP_LOGE(TAG, "Failed to initialize display, continuing without it");
-    // }
 
     err = sd_card_init();
     if (err != ESP_OK) {
@@ -90,8 +79,13 @@ void app_main() {
         return;
     }
 
-    // A dead display shouldn't take the rest of the program down with it.
     err = start_display_task();
+
+    ESP_LOGI(TAG, "Playing startup tone");
+    err = i2s_play_beep(440, 500);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to play startup tone: %s", esp_err_to_name(err));
+    }
 
     int moisture_level = 0;
     int ticks_since_beep = 0;
