@@ -20,7 +20,8 @@
 #define EYE_LOOK_MS       1500
 #define EYE_LOOK_PAUSE_MS 400
 
-// Blink: the upper lid bows down until it lies on the lower lid, then lifts again
+// Blink: the inner lid line (EYE_LID_CREASE) bows down until it lies on the bottom lid, then lifts
+// again. The top arc stays put, so the moving line never crosses it.
 #define EYE_BLINK_MS       200
 #define EYE_BLINK_HOLD_MS  60
 #define EYE_BLINK_PAUSE_MS 3000
@@ -33,7 +34,7 @@ static lv_point_precise_t eye_lashes[EYE_LASH_COUNT][2];
 
 // Shared between the pupil and blink animations so each can re-clip the pupil against the lid
 static struct {
-    lv_obj_t* upper_lid;
+    lv_obj_t* blink_lid;
     lv_obj_t* pupil_clip;
     lv_obj_t* pupil;
     float pupil_x;
@@ -84,7 +85,7 @@ static float eye_lid_y(float dx, float cy, float height) {
     return height > 0 ? cy - bow : cy + bow;
 }
 
-// Hides whatever part of the pupil sits above the upper lid by moving the clip container's top edge
+// Hides whatever part of the pupil sits above the blinking lid by moving the clip container's top edge
 // to the lid. The edge is flat, so it follows the lid at the pupil's centre only.
 static void eye_update_pupil() {
     float cx = DISPLAY_H_RES / 2.0f;
@@ -105,14 +106,14 @@ static void eye_pupil_anim_cb(void* var, int32_t v) {
     eye_update_pupil();
 }
 
-// v runs from 0 (open) to 1000 (closed, lying on the lower lid)
+// v runs from 0 (open) to 1000 (closed, lying on the bottom lid)
 static void eye_blink_anim_cb(void* var, int32_t v) {
     float t = v / 1000.0f;
     float cx = DISPLAY_H_RES / 2.0f;
     float cy = DISPLAY_V_RES / 2.0f;
-    lv_point_precise_t* pts = eye_lids[EYE_LID_UPPER];
+    lv_point_precise_t* pts = eye_lids[EYE_LID_CREASE];
 
-    eye_state.lid_h = EYE_UPPER_LID_H + (-EYE_LOWER_LID_H - EYE_UPPER_LID_H) * t;
+    eye_state.lid_h = EYE_CREASE_H + (-EYE_LOWER_LID_H - EYE_CREASE_H) * t;
     for (int i = 0; i < EYE_LID_PTS; i++) {
         float dx = -EYE_HALF_WIDTH + 2.0f * EYE_HALF_WIDTH * i / (EYE_LID_PTS - 1);
         pts[i].x = lroundf(cx + dx);
@@ -132,7 +133,7 @@ esp_err_t display_draw_eye() {
     float cx = DISPLAY_H_RES / 2.0f;
     float cy = DISPLAY_V_RES / 2.0f;
 
-    eye_draw_lid(eye_lids[EYE_LID_CREASE], cx, cy, EYE_CREASE_H, true, NULL, NULL, NULL);
+    eye_draw_lid(eye_lids[EYE_LID_UPPER], cx, cy, EYE_UPPER_LID_H, true, NULL, NULL, NULL);
 
     float lower_cy, lower_r, lower_half;
     eye_draw_lid(eye_lids[EYE_LID_LOWER], cx, cy, EYE_LOWER_LID_H, false, &lower_cy, &lower_r, &lower_half);
@@ -151,16 +152,16 @@ esp_err_t display_draw_eye() {
 
     eye_state.pupil_clip = pupil_clip;
     eye_state.pupil = pupil;
-    eye_state.upper_lid = eye_create_line(eye_lids[EYE_LID_UPPER], 0);
-    eye_state.lid_h = EYE_UPPER_LID_H;
+    eye_state.blink_lid = eye_create_line(eye_lids[EYE_LID_CREASE], 0);
+    eye_state.lid_h = EYE_CREASE_H;
     eye_state.pupil_x = cx - EYE_LOOK_X;
     eye_state.pupil_y = cy;
-    eye_blink_anim_cb(eye_state.upper_lid, 0);
+    eye_blink_anim_cb(eye_state.blink_lid, 0);
     eye_pupil_anim_cb(pupil, -1000);
 
     lv_anim_t blink;
     lv_anim_init(&blink);
-    lv_anim_set_var(&blink, eye_state.upper_lid);
+    lv_anim_set_var(&blink, eye_state.blink_lid);
     lv_anim_set_exec_cb(&blink, eye_blink_anim_cb);
     lv_anim_set_values(&blink, 0, 1000);
     lv_anim_set_duration(&blink, EYE_BLINK_MS);
