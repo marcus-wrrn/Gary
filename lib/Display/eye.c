@@ -37,6 +37,8 @@ static struct {
     lv_obj_t* blink_lid;
     lv_obj_t* pupil_clip;
     lv_obj_t* pupil;
+    lv_anim_t* look_anim;
+    lv_anim_t* blink_anim;
     float pupil_x;
     float pupil_y;
     float lid_h;  // signed: positive bows up, negative bows down
@@ -87,15 +89,21 @@ static float eye_lid_y(float dx, float cy, float height) {
 
 // Hides whatever part of the pupil sits above the blinking lid by moving the clip container's top edge
 // to the lid. The edge is flat, so it follows the lid at the pupil's centre only.
+// The container hugs the visible part of the pupil, since moving it redraws both its old and new area.
 static void eye_update_pupil() {
     float cx = DISPLAY_H_RES / 2.0f;
     float cy = DISPLAY_V_RES / 2.0f;
+    int32_t left = lroundf(eye_state.pupil_x - EYE_PUPIL_R);
+    int32_t pupil_top = lroundf(eye_state.pupil_y - EYE_PUPIL_R);
+    int32_t bottom = pupil_top + EYE_PUPIL_R * 2;
     int32_t top = lroundf(eye_lid_y(eye_state.pupil_x - cx, cy, eye_state.lid_h));
 
-    lv_obj_set_pos(eye_state.pupil_clip, 0, top);
-    lv_obj_set_size(eye_state.pupil_clip, DISPLAY_H_RES, DISPLAY_V_RES - top);
-    lv_obj_set_pos(eye_state.pupil, lroundf(eye_state.pupil_x - EYE_PUPIL_R),
-                   lroundf(eye_state.pupil_y - EYE_PUPIL_R) - top);
+    if (top < pupil_top) top = pupil_top;
+    if (top > bottom) top = bottom;
+
+    lv_obj_set_pos(eye_state.pupil_clip, left, top);
+    lv_obj_set_size(eye_state.pupil_clip, EYE_PUPIL_R * 2, bottom - top);
+    lv_obj_set_pos(eye_state.pupil, 0, pupil_top - top);
 }
 
 static void eye_pupil_anim_cb(void* var, int32_t v) {
@@ -171,7 +179,7 @@ esp_err_t display_draw_eye() {
     lv_anim_set_repeat_delay(&blink, EYE_BLINK_PAUSE_MS);
     lv_anim_set_repeat_count(&blink, LV_ANIM_REPEAT_INFINITE);
     lv_anim_set_path_cb(&blink, lv_anim_path_ease_in_out);
-    lv_anim_start(&blink);
+    eye_state.blink_anim = lv_anim_start(&blink);
 
     lv_anim_t anim;
     lv_anim_init(&anim);
@@ -184,7 +192,7 @@ esp_err_t display_draw_eye() {
     lv_anim_set_repeat_delay(&anim, EYE_LOOK_PAUSE_MS);
     lv_anim_set_repeat_count(&anim, LV_ANIM_REPEAT_INFINITE);
     lv_anim_set_path_cb(&anim, lv_anim_path_ease_in_out);
-    lv_anim_start(&anim);
+    eye_state.look_anim = lv_anim_start(&anim);
 
     // Lashes point straight out from the lower lid's circle, spread along most of the lid
     float span = lower_half * 0.85f;
@@ -199,4 +207,19 @@ esp_err_t display_draw_eye() {
         eye_create_line(eye_lashes[i], 2);
     }
     return ESP_OK;
+}
+
+void display_set_eye_animation(bool play) {
+    // Both animations repeat forever, so the handles from lv_anim_start() stay valid
+    lv_anim_t* anims[] = {eye_state.look_anim, eye_state.blink_anim};
+    for (size_t i = 0; i < sizeof(anims) / sizeof(anims[0]); i++) {
+        if (anims[i] == NULL) {
+            continue;
+        }
+        if (play) {
+            lv_anim_resume(anims[i]);
+        } else {
+            lv_anim_pause(anims[i]);
+        }
+    }
 }

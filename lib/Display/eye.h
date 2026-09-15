@@ -7,3 +7,6 @@
 // onto the bottom lid every few seconds. Requires display_init() to have been called first,
 // and lv_timer_handler() running for the animation.
 esp_err_t display_draw_eye();
+
+// Pauses or resumes the look and blink animations where they are. No-op before display_draw_eye().
+void display_set_eye_animation(bool play);

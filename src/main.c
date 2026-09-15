@@ -9,7 +9,7 @@
 #include "plant_state.h"
 #include "sd_card.h"
 #include "spi.h"
-#include "display.h"
+#include "tasks/display_task.h"
 #include "eye.h"
 
 #define DEBOUNCE_DELAY_US 200000ULL
@@ -91,28 +91,11 @@ void app_main() {
     }
 
     // A dead display shouldn't take the rest of the program down with it.
-    err = display_init();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize display, continuing without it");
-    } else {
-        //display_show_image("S:plant/eye.jpg");
-        //display_show_test_pattern();
-        display_draw_eye();
-    }
+    err = start_display_task();
 
     int moisture_level = 0;
     int ticks_since_beep = 0;
     PlantState state = plant_get_current_state();
-
-    size_t file_size = 0;
-    char * file_name = "plant/eye_240.jpg";
-    err = sd_card_get_file_size(file_name, &file_size);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Unable to read file");
-    } else {
-        ESP_LOGI(TAG, "File size is: %d", file_size);
-    }
-
 
     while (1) {
         if (xQueueReceive(button_queue, &button_flag, 0)) {
@@ -127,7 +110,6 @@ void app_main() {
         // gather information
 
         // update display, sound and other tasks
-        lv_timer_handler();
 
 
         err = gpio_adc_oneshot_read(MOISTURE_SENSOR_CHANNEL, &moisture_level);

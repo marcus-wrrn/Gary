@@ -50,7 +50,7 @@ esp_err_t display_init() {
     }
     // This module scans with rows and columns transposed and RGB order compared to
     // LVGL's ILI9341 defaults, so set MADCTL's swap bit and leave BGR off.
-    lv_lcd_generic_mipi_set_address_mode(display, false, false, true, false);
+    lv_lcd_generic_mipi_set_address_mode(display, false, DISPLAY_FLIP_VERTICAL, true, false);
 
     uint8_t* draw_buf = heap_caps_malloc(DISPLAY_DRAW_BUF_SIZE, MALLOC_CAP_DMA);
     if (draw_buf == NULL) {
