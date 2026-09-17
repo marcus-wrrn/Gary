@@ -30,21 +30,54 @@ static void IRAM_ATTR button_isr(void *arg) {
     }
 }
 
+static esp_err_t setup_peripherals() {
+    esp_err_t ret = gpio_init_digital();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize GPIO pins");
+        return ret;
+    }
+
+    ret = gpio_init_adc();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize ADC closing program");
+        return ret;
+    }
+
+    // ret = i2c_init();
+    // if (err != ESP_OK) {
+    //     ESP_LOGE(TAG, "Failed to initialize I2C");
+    //     return ret;
+    // }
+
+    ret = i2s_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize I2S");
+        return ret;
+    }
+
+    ret = sd_card_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize SD card");
+        return ret;
+    }
+
+    ret = spi_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize SPI");
+        return ret;
+    }
+
+    return ret;
+}
+
 void app_main() {
 #if !DEVELOPMENT
     esp_log_level_set("*", ESP_LOG_NONE);
 #endif
     esp_log_level_set("i2c.master", ESP_LOG_NONE);
 
-    esp_err_t err = gpio_init_digital();
+    esp_err_t err = setup_peripherals();
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize GPIO pins");
-        return;
-    }
-
-    err = gpio_init_adc();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize ADC closing program");
         return;
     }
 
@@ -53,37 +86,13 @@ void app_main() {
     gpio_isr_handler_add(TEST_BUTTON_PIN, button_isr, NULL);
     bool button_flag;
 
-    // err = i2c_init();
-    // if (err != ESP_OK) {
-    //     ESP_LOGE(TAG, "Failed to initialize I2C");
-    //     return;
-    // }
-
-    err = i2s_init();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize I2S");
-        return;
-    }
-
-    err = sd_card_init();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize SD card");
-        return;
-    }
-
-    err = spi_init();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize SPI");
-        return;
-    }
-
     err = start_display_task();
 
     ESP_LOGI(TAG, "Playing startup tone");
-    err = i2s_play_beep(440, 500);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to play startup tone: %s", esp_err_to_name(err));
-    }
+    // err = i2s_play_beep(440, 500);
+    // if (err != ESP_OK) {
+    //     ESP_LOGE(TAG, "Failed to play startup tone: %s", esp_err_to_name(err));
+    // }
 
     int moisture_level = 0;
     PlantState state = plant_get_current_state();
@@ -91,16 +100,16 @@ void app_main() {
 
     while (1) {
         if (xQueueReceive(button_queue, &button_flag, 0)) {
-            //err = i2s_play_beep(440, 500);
-            // if (err != ESP_OK) {
-            //     ESP_LOGE(TAG, "Failed to play tone: %s", esp_err_to_name(err));
-            // }
             play_animation = !play_animation;
             display_task_data_t anim = {
                 .play_animation = play_animation
             };
             xQueueSendToBack(display_queue, &anim, 0);
             ESP_LOGI(TAG, "Button pressed");
+            // err = i2s_play_beep(440, 500);
+            // if (err != ESP_OK) {
+            //     ESP_LOGE(TAG, "Failed to play tone: %s", esp_err_to_name(err));
+            // }
         }
 
         // decide moves based on current state
@@ -110,13 +119,10 @@ void app_main() {
         // update display, sound and other tasks
 
 
-        err = gpio_adc_oneshot_read(MOISTURE_SENSOR_CHANNEL, &moisture_level);
+        err = gpio_adc_read_moisture(&moisture_level);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Invalid read of moisture sensor");
-        }
-        ESP_LOGI(TAG, "Moisture Level: %d", moisture_level);
-        
-
+        }        
         // int len = snprintf(disp_buffer, sizeof(disp_buffer), "Moisture Level: %d", moisture_level);
         // clear_display();
         // display_draw_string(0, 0, disp_buffer, len);
