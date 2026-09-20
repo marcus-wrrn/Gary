@@ -49,12 +49,6 @@ static esp_err_t setup_peripherals() {
     //     return ret;
     // }
 
-    ret = i2s_init();
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize I2S");
-        return ret;
-    }
-
     ret = sd_card_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize SD card");

@@ -75,8 +75,51 @@ esp_err_t i2s_disable_channel() {
     return ret;
 }
 
+esp_err_t i2s_configure_stream(uint32_t sample_rate, uint16_t bit_depth, uint16_t num_channels) {
+    if (num_channels != 1 && num_channels != 2) {
+        ESP_LOGE(TAG, "Unsupported channel count: %u", (unsigned)num_channels);
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (bit_depth != 16 && bit_depth != 32) {
+        ESP_LOGE(TAG, "Unsupported bit depth: %u", (unsigned)bit_depth);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    i2s_std_clk_config_t clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(sample_rate);
+    esp_err_t ret = i2s_channel_reconfig_std_clock(tx_handle, &clk_cfg);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Unable to set sample rate to %u", (unsigned)sample_rate);
+        return ret;
+    }
+
+    i2s_slot_mode_t slot_mode = (num_channels == 1) ? I2S_SLOT_MODE_MONO : I2S_SLOT_MODE_STEREO;
+    i2s_std_slot_config_t slot_cfg =
+        I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG((i2s_data_bit_width_t)bit_depth, slot_mode);
+
+    ret = i2s_channel_reconfig_std_slot(tx_handle, &slot_cfg);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Unable to set slot format");
+    }
+    return ret;
+}
+
+esp_err_t i2s_write(const void* data, size_t len, size_t* bytes_written) {
+    if (data == NULL || bytes_written == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t ret = i2s_channel_write(tx_handle, data, len, bytes_written, portMAX_DELAY);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Unable to write samples");
+    }
+    return ret;
+}
+
 esp_err_t i2s_play_beep(uint32_t freq_hz, uint32_t duration_ms) {
-    esp_err_t err = i2s_enable_channel();
+    esp_err_t err = i2s_configure_stream(I2S_TONE_SAMPLE_RATE, I2S_TONE_BIT_DEPTH, 2);
+    if (err != ESP_OK) return err;
+
+    err = i2s_enable_channel();
     if (err != ESP_OK) return err;
 
     err = i2s_play_tone(freq_hz, duration_ms);
@@ -89,7 +132,7 @@ esp_err_t i2s_play_beep(uint32_t freq_hz, uint32_t duration_ms) {
 }
 
 esp_err_t i2s_play_tone(uint32_t freq_hz, uint32_t duration_ms) {
-    const uint32_t sample_rate = 48000;
+    const uint32_t sample_rate = I2S_TONE_SAMPLE_RATE;
     const int32_t amplitude = 0x10000000;
     static int32_t tone_buf[BUFFER_LEN * 2];
     size_t bytes_written;

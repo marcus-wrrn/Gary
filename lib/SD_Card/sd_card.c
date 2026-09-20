@@ -195,3 +195,69 @@ esp_err_t sd_card_read_file(const char* filename, uint8_t** data, size_t* size) 
     *size = file_size;
     return ESP_OK;
 }
+
+esp_err_t sd_card_open(const char* filename, sd_file_t* file) {
+    if (file == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    file->fp = NULL;
+
+    char path[MAX_PATH_SIZE];
+    esp_err_t ret = build_path(filename, path, sizeof(path));
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    FILE* f = fopen(path, "rb");
+    if (f == NULL) {
+        ESP_LOGE(TAG, "Unable to open file: %s", path);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    file->fp = f;
+    return ESP_OK;
+}
+
+esp_err_t sd_card_close(sd_file_t* file) {
+    if (file == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (file->fp == NULL) {
+        return ESP_OK;
+    }
+
+    int ret = fclose(file->fp);
+    file->fp = NULL;
+    if (ret != 0) {
+        ESP_LOGE(TAG, "Unable to close file");
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+esp_err_t sd_card_read(sd_file_t* file, uint8_t* buf, size_t buf_len, size_t* bytes_read) {
+    if (file == NULL || file->fp == NULL || buf == NULL || bytes_read == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    *bytes_read = fread(buf, 1, buf_len, file->fp);
+    // A short read means end of file unless the error flag is also set, so ferror
+    // is the only thing that distinguishes the two.
+    if (ferror(file->fp)) {
+        ESP_LOGE(TAG, "Unable to read from file");
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+esp_err_t sd_card_seek(sd_file_t* file, long offset, int whence) {
+    if (file == NULL || file->fp == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (fseek(file->fp, offset, whence) != 0) {
+        ESP_LOGE(TAG, "Unable to seek to offset %ld", offset);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}

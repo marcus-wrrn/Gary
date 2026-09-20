@@ -2,5 +2,6 @@
     "files.associations": {
         "gpio.h": "c"
     },
-    "C_Cpp.default.compilerPath": "/home/marcuswrrn/.platformio/packages/toolchain-xtensa-esp-elf/bin/xtensa-esp32s3-elf-gcc"
+    "C_Cpp.default.compilerPath": "/home/marcuswrrn/.platformio/packages/toolchain-xtensa-esp-elf/bin/xtensa-esp32s3-elf-gcc",
+    "idf.currentSetup": "/home/marcuswrrn/.espressif/v6.1/esp-idf"
 }
