@@ -10,6 +10,7 @@
 #include "sd_card.h"
 #include "spi.h"
 #include "tasks/display_task.h"
+#include "tasks/sound_task.h"
 #include "eye.h"
 
 #define DEBOUNCE_DELAY_US 200000ULL
@@ -76,20 +77,29 @@ void app_main() {
     }
 
     button_queue = xQueueCreate(10, sizeof(bool));
+    if (button_queue == NULL) {
+        ESP_LOGE(TAG, "Failed to create button queue");
+        return;
+    }
     gpio_install_isr_service(0);
     gpio_isr_handler_add(TEST_BUTTON_PIN, button_isr, NULL);
     bool button_flag;
 
     err = start_display_task();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start display task: %s", esp_err_to_name(err));
+        return;
+    }
 
-    ESP_LOGI(TAG, "Playing startup tone");
-    // err = i2s_play_beep(440, 500);
-    // if (err != ESP_OK) {
-    //     ESP_LOGE(TAG, "Failed to play startup tone: %s", esp_err_to_name(err));
-    // }
+    err = start_sound_task();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start sound task: %s", esp_err_to_name(err));
+        return;
+    }
 
     int moisture_level = 0;
     PlantState state = plant_get_current_state();
+    (void)state;
     bool play_animation = true;
 
     while (1) {
@@ -99,11 +109,12 @@ void app_main() {
                 .play_animation = play_animation
             };
             xQueueSendToBack(display_queue, &anim, 0);
+
+            sound_task_data_t sound = {
+                .track = MEEP
+            };
+            xQueueSendToBack(sound_queue, &sound, 0);
             ESP_LOGI(TAG, "Button pressed");
-            // err = i2s_play_beep(440, 500);
-            // if (err != ESP_OK) {
-            //     ESP_LOGE(TAG, "Failed to play tone: %s", esp_err_to_name(err));
-            // }
         }
 
         // decide moves based on current state
@@ -113,10 +124,12 @@ void app_main() {
         // update display, sound and other tasks
 
 
-        err = gpio_adc_read_moisture(&moisture_level);
+        err = gpio_adc_oneshot_read(MOISTURE_SENSOR_CHANNEL, &moisture_level);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Invalid read of moisture sensor");
-        }        
+        }
+        ESP_LOGI(TAG, "Moisture Level: %d", moisture_level);
+
         // int len = snprintf(disp_buffer, sizeof(disp_buffer), "Moisture Level: %d", moisture_level);
         // clear_display();
         // display_draw_string(0, 0, disp_buffer, len);

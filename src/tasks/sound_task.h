@@ -1,6 +1,7 @@
 #pragma once
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "esp_err.h"
 
 typedef enum Track {
     MEEP = 0

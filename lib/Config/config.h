@@ -30,7 +30,6 @@
 // Digital / analog IO
 #define SSD1306_RST_PIN         GPIO_NUM_2
 #define TEST_BUTTON_PIN         GPIO_NUM_15
-#define MICROPHONE_OUT_CHANNEL  ADC_CHANNEL_2
 #define MOISTURE_SENSOR_CHANNEL ADC_CHANNEL_0   // GPIO1
 
 // I2C (display)

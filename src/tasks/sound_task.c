@@ -15,13 +15,18 @@ QueueHandle_t sound_queue = NULL;
 static void sound_handle_message(const struct sound_task_data_t* msg) {
     ESP_LOGI(TAG, "Playing Track: %d", msg->track);
 
-    switch (msg->track)
-    {
-    case (enum Track)MEEP:
-        play_track("/plant/meep.wav");
+    esp_err_t err = ESP_OK;
+    switch (msg->track) {
+    case MEEP:
+        err = play_track("/plant/meep.wav");
         break;
     default:
+        ESP_LOGW(TAG, "Unknown track: %d", msg->track);
         break;
+    }
+
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to play track %d: %s", msg->track, esp_err_to_name(err));
     }
 }
 
@@ -30,7 +35,8 @@ static void sound_task(void* arg) {
     struct sound_task_data_t msg;
 
     while (1) {
-        if (xQueueReceive(sound_queue, &msg, 100) == pdTRUE) {
+        // Nothing to do between tracks, so block until a message arrives
+        if (xQueueReceive(sound_queue, &msg, portMAX_DELAY) == pdTRUE) {
             sound_handle_message(&msg);
         }
     }
