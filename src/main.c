@@ -128,7 +128,7 @@ void app_main() {
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Invalid read of moisture sensor");
         }
-        ESP_LOGI(TAG, "Moisture Level: %d", moisture_level);
+        // ESP_LOGI(TAG, "Moisture Level: %d", moisture_level);
 
         // int len = snprintf(disp_buffer, sizeof(disp_buffer), "Moisture Level: %d", moisture_level);
         // clear_display();

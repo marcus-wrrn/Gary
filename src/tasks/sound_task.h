@@ -1,4 +1,5 @@
 #pragma once
+#include <stdbool.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "esp_err.h"
@@ -17,3 +18,5 @@ extern QueueHandle_t sound_queue;
 
 // initializes FreeRTOS task for playing sound on the speakers/listening to noises
 esp_err_t start_sound_task();
+
+esp_err_t sound_enable_mic_logging(bool enable);

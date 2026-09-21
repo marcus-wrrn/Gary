@@ -30,14 +30,34 @@ static void sound_handle_message(const struct sound_task_data_t* msg) {
     }
 }
 
+esp_err_t sound_enable_mic_logging(bool enable) {
+    if (enable == mic_is_running()) {
+        return ESP_OK;
+    }
+    return enable ? mic_start() : mic_stop();
+}
+
 static void sound_task(void* arg) {
     (void)arg;
     struct sound_task_data_t msg;
 
     while (1) {
-        // Nothing to do between tracks, so block until a message arrives
-        if (xQueueReceive(sound_queue, &msg, portMAX_DELAY) == pdTRUE) {
+        if (!mic_is_running()) {
+            if (xQueueReceive(sound_queue, &msg, portMAX_DELAY) == pdTRUE) {
+                sound_handle_message(&msg);
+            }
+            continue;
+        }
+
+        if (xQueueReceive(sound_queue, &msg, 0) == pdTRUE) {
             sound_handle_message(&msg);
+            continue;
+        }
+
+        esp_err_t err = mic_poll();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Mic read failed, stopping monitor: %s", esp_err_to_name(err));
+            sound_enable_mic_logging(false);
         }
     }
 }
@@ -57,6 +77,13 @@ esp_err_t start_sound_task() {
     if (sound_queue == NULL) {
         ESP_LOGE(TAG, "Failed to create sound queue");
         return ESP_ERR_NO_MEM;
+    }
+
+    // A mic that fails to start is not worth failing the task over; playback
+    // still works without it.
+    ret = mic_start();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Mic monitor unavailable: %s", esp_err_to_name(ret));
     }
 
     BaseType_t created = xTaskCreatePinnedToCore(sound_task, "sound", SOUND_TASK_STACK_SIZE, NULL, 
