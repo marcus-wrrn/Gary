@@ -185,7 +185,7 @@ esp_err_t play_track(const char* filename) {
         return ret;
     }
 
-    ret = i2s_enable_channel();
+    ret = i2s_enable_tx();
     if (ret != ESP_OK) {
         sd_card_close(&file);
         return ret;
@@ -193,7 +193,7 @@ esp_err_t play_track(const char* filename) {
 
     ret = stream_samples(&file, &info);
 
-    esp_err_t disable_ret = i2s_disable_channel();
+    esp_err_t disable_ret = i2s_disable_tx();
     esp_err_t close_ret = sd_card_close(&file);
 
     if (ret != ESP_OK) return ret;

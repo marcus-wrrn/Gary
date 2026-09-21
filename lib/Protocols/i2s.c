@@ -7,13 +7,13 @@ static const char* TAG = "I2S";
 
 #define BUFFER_LEN 64
 i2s_chan_handle_t tx_handle;
-
+i2s_chan_handle_t rx_handle;
 
 esp_err_t i2s_init() {
-    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
-    esp_err_t ret = i2s_new_channel(&chan_cfg, &tx_handle, NULL);
+    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+    esp_err_t ret = i2s_new_channel(&chan_cfg, &tx_handle, &rx_handle);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Unable to initialize I2S channel");
+        ESP_LOGE(TAG, "Unable to initialize I2S channels");
         return ret;
     }
 
@@ -24,8 +24,8 @@ esp_err_t i2s_init() {
             .mclk = I2S_GPIO_UNUSED,
             .bclk = I2S_BCLK_PIN,
             .ws = I2S_WS_PIN,
-            .dout = I2S_DIN_PIN,
-            .din = I2S_GPIO_UNUSED,
+            .dout = I2S_DOUT_PIN,
+            .din = I2S_DIN_PIN,
             .invert_flags = {
                 .mclk_inv = false,
                 .bclk_inv = false,
@@ -36,41 +36,47 @@ esp_err_t i2s_init() {
 
     ret = i2s_channel_init_std_mode(tx_handle, &std_cfg);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Unable to initialize channel config");
+        ESP_LOGE(TAG, "Unable to initialize TX channel config");
         return ret;
     }
 
-    // ret = i2s_channel_enable(tx_handle);
-    // if (ret != ESP_OK) {
-    //     ESP_LOGE(TAG, "Unable to enable I2S channel");
-    //     return ret;
-    // }
+    ret = i2s_channel_init_std_mode(rx_handle, &std_cfg);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Unable to initialize RX channel config");
+        return ret;
+    }
 
     return ret;
 }
 
-// esp_err_t i2s_play_sound() {
-//     esp_err_t err = i2s_channel_enable(tx_handle);
-//     if (err != ESP_OK) {
-//         ESP_LOGE(TAG, "Unable to enable channel");
-//         return err;
-//     }
-
-//     return err;
-// }
-
-esp_err_t i2s_enable_channel() {
+esp_err_t i2s_enable_tx() {
     esp_err_t ret = i2s_channel_enable(tx_handle);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Unable to enable channel");
+        ESP_LOGE(TAG, "Unable to enable TX channel");
     }
     return ret;
 }
 
-esp_err_t i2s_disable_channel() {
+esp_err_t i2s_disable_tx() {
     esp_err_t ret = i2s_channel_disable(tx_handle);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Unable to disable channel");
+        ESP_LOGE(TAG, "Unable to disable TX channel");
+    }
+    return ret;
+}
+
+esp_err_t i2s_enable_rx() {
+    esp_err_t ret = i2s_channel_enable(rx_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Unable to enable RX channel");
+    }
+    return ret;
+}
+
+esp_err_t i2s_disable_rx() {
+    esp_err_t ret = i2s_channel_disable(rx_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Unable to disable RX channel");
     }
     return ret;
 }
@@ -86,19 +92,35 @@ esp_err_t i2s_configure_stream(uint32_t sample_rate, uint16_t bit_depth, uint16_
     }
 
     i2s_std_clk_config_t clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(sample_rate);
-    esp_err_t ret = i2s_channel_reconfig_std_clock(tx_handle, &clk_cfg);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Unable to set sample rate to %u", (unsigned)sample_rate);
-        return ret;
-    }
-
     i2s_slot_mode_t slot_mode = (num_channels == 1) ? I2S_SLOT_MODE_MONO : I2S_SLOT_MODE_STEREO;
     i2s_std_slot_config_t slot_cfg =
         I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG((i2s_data_bit_width_t)bit_depth, slot_mode);
 
-    ret = i2s_channel_reconfig_std_slot(tx_handle, &slot_cfg);
+    i2s_chan_handle_t handles[] = { tx_handle, rx_handle };
+    for (int i = 0; i < 2; i++) {
+        esp_err_t ret = i2s_channel_reconfig_std_clock(handles[i], &clk_cfg);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Unable to set sample rate to %u", (unsigned)sample_rate);
+            return ret;
+        }
+
+        ret = i2s_channel_reconfig_std_slot(handles[i], &slot_cfg);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Unable to set slot format");
+            return ret;
+        }
+    }
+    return ESP_OK;
+}
+
+esp_err_t i2s_read(void* data, size_t len, size_t* bytes_read) {
+    if (data == NULL || bytes_read == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t ret = i2s_channel_read(rx_handle, data, len, bytes_read, portMAX_DELAY);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Unable to set slot format");
+        ESP_LOGE(TAG, "Unable to read samples");
     }
     return ret;
 }
@@ -119,7 +141,7 @@ esp_err_t i2s_play_beep(uint32_t freq_hz, uint32_t duration_ms) {
     esp_err_t err = i2s_configure_stream(I2S_TONE_SAMPLE_RATE, I2S_TONE_BIT_DEPTH, 2);
     if (err != ESP_OK) return err;
 
-    err = i2s_enable_channel();
+    err = i2s_enable_tx();
     if (err != ESP_OK) return err;
 
     err = i2s_play_tone(freq_hz, duration_ms);
@@ -127,7 +149,7 @@ esp_err_t i2s_play_beep(uint32_t freq_hz, uint32_t duration_ms) {
         ESP_LOGE(TAG, "Unable to play tone");
     }
 
-    esp_err_t disable_err = i2s_disable_channel();
+    esp_err_t disable_err = i2s_disable_tx();
     return err != ESP_OK ? err : disable_err;
 }
 

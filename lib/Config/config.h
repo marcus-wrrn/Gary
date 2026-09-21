@@ -16,10 +16,11 @@
 #define I2C_DISPLAY_SDA_PIN     GPIO_NUM_17
 #define I2C_DISPLAY_SCL_PIN     GPIO_NUM_18
 
-// I2S (speaker)
+// I2S (speaker + mic share BCLK/WS)
 #define I2S_BCLK_PIN            GPIO_NUM_4
 #define I2S_WS_PIN              GPIO_NUM_6
-#define I2S_DIN_PIN             GPIO_NUM_7
+#define I2S_DOUT_PIN            GPIO_NUM_7
+#define I2S_DIN_PIN             GPIO_NUM_NC     // no mic wired on this board
 
 // SPI (SD card)
 #define SPI_MISO_PIN            GPIO_NUM_37
@@ -36,10 +37,11 @@
 #define I2C_DISPLAY_SDA_PIN     GPIO_NUM_41
 #define I2C_DISPLAY_SCL_PIN     GPIO_NUM_42
 
-// I2S (speaker)
+// I2S (speaker + mic share BCLK/WS)
 #define I2S_BCLK_PIN            GPIO_NUM_14
 #define I2S_WS_PIN              GPIO_NUM_21
-#define I2S_DIN_PIN             GPIO_NUM_47
+#define I2S_DOUT_PIN            GPIO_NUM_47     // to the amplifier's DIN
+#define I2S_DIN_PIN             GPIO_NUM_17     // from the mic's SD
 
 // SDMMC (SD Card) - onboard slot, 1-bit mode only
 #define SDMMC_CMD_PIN           GPIO_NUM_38
