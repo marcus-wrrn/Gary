@@ -3,9 +3,11 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "esp_err.h"
+#include "plant_state.h"
 
 typedef struct display_task_data_t {
     bool play_animation;
+    DisplayState state;
 } display_task_data_t;
 
 // queue for passing information to the display

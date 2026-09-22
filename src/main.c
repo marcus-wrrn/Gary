@@ -117,11 +117,6 @@ void app_main() {
             ESP_LOGI(TAG, "Button pressed");
         }
 
-        // decide moves based on current state
-
-        // gather information
-
-        // update display, sound and other tasks
 
 
         err = gpio_adc_oneshot_read(MOISTURE_SENSOR_CHANNEL, &moisture_level);

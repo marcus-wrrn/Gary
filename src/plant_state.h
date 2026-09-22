@@ -1,6 +1,10 @@
 #pragma once
 #include "esp_err.h"
 
+typedef enum DisplayState {
+    EYE = 0,
+    AUDIO_VIS = 1
+} DisplayState;
 
 typedef enum PlantState { 
     WATERED = 0, 

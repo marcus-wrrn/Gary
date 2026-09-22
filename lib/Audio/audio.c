@@ -1,7 +1,10 @@
 #include "audio.h"
+#include <math.h>
 #include <stdbool.h>
 #include <string.h>
+#include "freertos/FreeRTOS.h"
 #include "sd_card.h"
+#include "fft.h"
 #include "i2s.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -9,6 +12,15 @@
 #define STREAM_BUFFER_SIZE  4096
 #define MIC_FRAMES_PER_READ 256
 #define MIC_LOG_INTERVAL_US (1000 * 1000)
+// One read is one transform, so a snapshot lands every MIC_FFT_SIZE frames
+#define MIC_FFT_SIZE        MIC_FRAMES_PER_READ
+// The mic left-justifies 24 bits in the slot, so this is what a full-scale sample comes to
+#define MIC_FULL_SCALE      8388608.0f
+// Window the band levels are stretched over, in dB relative to full scale. Room
+// tone sits near the floor and a voice a foot away reaches the ceiling; move
+// them together to change how much of the ring a given loudness fills.
+#define MIC_SPECTRUM_FLOOR_DB   (-75.0f)
+#define MIC_SPECTRUM_CEIL_DB    (-15.0f)
 #define RIFF_HEADER_SIZE    12
 #define CHUNK_HEADER_SIZE   8
 #define FMT_CHUNK_MIN_SIZE  16
@@ -27,6 +39,18 @@ typedef struct {
 } slot_stats_t;
 
 static int32_t mic_buf[MIC_FRAMES_PER_READ * 2];
+static float mic_fft_re[MIC_FFT_SIZE];
+static float mic_fft_im[MIC_FFT_SIZE];
+static float mic_fft_mags[MIC_FFT_SIZE / 2];
+// First bin of each band plus a closing edge, so band b covers [edges[b], edges[b + 1])
+static uint8_t mic_band_edges[MIC_BAND_COUNT + 1];
+
+// Written by mic_poll() on the sound task and read by whoever is drawing, so
+// both sides take the spinlock; the copy is small enough to do inside it.
+static portMUX_TYPE mic_spectrum_lock = portMUX_INITIALIZER_UNLOCKED;
+static uint8_t mic_spectrum[MIC_BAND_COUNT];
+static bool mic_spectrum_valid = false;
+
 static bool mic_running = false;
 static int64_t mic_window_start_us = 0;
 static slot_stats_t mic_left;
@@ -245,6 +269,86 @@ static void mic_accumulate(slot_stats_t* stats, int32_t word) {
     }
 }
 
+// Log-spaced band edges over bins 1..MIC_FFT_SIZE / 2, skipping bin 0 because
+// DC carries the mic's standing offset rather than anything audible.
+static void mic_build_bands() {
+    const float lowest = 1.0f;
+    const float highest = (float)(MIC_FFT_SIZE / 2);
+
+    for (size_t i = 0; i <= MIC_BAND_COUNT; i++) {
+        float edge = lowest * powf(highest / lowest, (float)i / (float)MIC_BAND_COUNT);
+        size_t bin = (size_t)lroundf(edge);
+        // Log spacing collapses at the bottom, where there are fewer bins than
+        // bands, so each edge is nudged past the one before it. There are more
+        // bins than bands overall, so this always has room to give.
+        if (i > 0 && bin <= mic_band_edges[i - 1]) {
+            bin = (size_t)mic_band_edges[i - 1] + 1;
+        }
+        mic_band_edges[i] = (uint8_t)bin;
+    }
+}
+
+// Transforms one full block and replaces the snapshot. A short block is left
+// alone rather than zero-padded, since the last snapshot is a better answer
+// than a spectrum smeared by the padding.
+static void mic_update_spectrum(size_t frames) {
+    if (frames < MIC_FFT_SIZE) {
+        return;
+    }
+
+    for (size_t i = 0; i < MIC_FFT_SIZE; i++) {
+        // Both slots are folded together: only one is strapped on this board,
+        // and averaging means the ring moves whichever one turns out to be live.
+        float left = (float)(mic_buf[i * 2] >> 8);
+        float right = (float)(mic_buf[i * 2 + 1] >> 8);
+        mic_fft_re[i] = (left + right) * (0.5f / MIC_FULL_SCALE);
+    }
+
+    fft_magnitudes(mic_fft_re, mic_fft_im, mic_fft_mags, MIC_FFT_SIZE);
+
+    uint8_t bands[MIC_BAND_COUNT];
+    for (size_t b = 0; b < MIC_BAND_COUNT; b++) {
+        // Peak rather than average across the band, so a single strong tone
+        // still shows at full height instead of being diluted by its neighbours.
+        float peak = 0.0f;
+        for (size_t bin = mic_band_edges[b]; bin < mic_band_edges[b + 1]; bin++) {
+            if (mic_fft_mags[bin] > peak) {
+                peak = mic_fft_mags[bin];
+            }
+        }
+
+        // A Hann window halves the amplitude and the transform spreads it over
+        // n / 2 bins, so this scaling puts a full-scale sine at 0 dB.
+        float level = peak * (4.0f / (float)MIC_FFT_SIZE);
+        float db = 20.0f * log10f(level + 1e-9f);
+        float t = (db - MIC_SPECTRUM_FLOOR_DB) / (MIC_SPECTRUM_CEIL_DB - MIC_SPECTRUM_FLOOR_DB);
+        if (t < 0.0f) t = 0.0f;
+        if (t > 1.0f) t = 1.0f;
+        bands[b] = (uint8_t)lroundf(t * 255.0f);
+    }
+
+    taskENTER_CRITICAL(&mic_spectrum_lock);
+    memcpy(mic_spectrum, bands, sizeof(bands));
+    mic_spectrum_valid = true;
+    taskEXIT_CRITICAL(&mic_spectrum_lock);
+}
+
+esp_err_t mic_get_spectrum(uint8_t* bands, size_t count) {
+    if (bands == NULL || count != MIC_BAND_COUNT) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t ret = ESP_OK;
+    taskENTER_CRITICAL(&mic_spectrum_lock);
+    if (mic_spectrum_valid) {
+        memcpy(bands, mic_spectrum, sizeof(mic_spectrum));
+    } else {
+        ret = ESP_ERR_INVALID_STATE;
+    }
+    taskEXIT_CRITICAL(&mic_spectrum_lock);
+    return ret;
+}
+
 esp_err_t mic_start() {
     if (mic_running) {
         return ESP_OK;
@@ -276,6 +380,7 @@ esp_err_t mic_start() {
         return ret;
     }
 
+    mic_build_bands();
     mic_reset_window();
     mic_running = true;
     ESP_LOGI(TAG, "Mic listening: %u Hz, %u-bit, left slot",
@@ -300,6 +405,12 @@ esp_err_t mic_stop() {
     }
 
     mic_running = false;
+
+    // Handing out the last snapshot after the mic stops would freeze a drawing
+    // caller on whatever it happened to hear last.
+    taskENTER_CRITICAL(&mic_spectrum_lock);
+    mic_spectrum_valid = false;
+    taskEXIT_CRITICAL(&mic_spectrum_lock);
     return ESP_OK;
 }
 
@@ -325,6 +436,7 @@ esp_err_t mic_poll() {
     }
     mic_frames += frames;
 
+    mic_update_spectrum(frames);
 
     if (esp_timer_get_time() - mic_window_start_us < MIC_LOG_INTERVAL_US) {
         return ESP_OK;

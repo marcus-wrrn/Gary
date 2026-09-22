@@ -13,7 +13,12 @@
 
 static const char* TAG = "DISPLAY_TASK";
 
+static DisplayState state = EYE;
 QueueHandle_t display_queue = NULL;
+
+static void display_change_state(DisplayState state) {
+
+}
 
 static void display_handle_message(const struct display_task_data_t* msg) {
     ESP_LOGI(TAG, "Animation state: %d", msg->play_animation);
