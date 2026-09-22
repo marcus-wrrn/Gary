@@ -3,7 +3,15 @@
 #include "esp_err.h"
 #include "display.h"
 
-esp_err_t display_draw_sound_sphere();
+// What the bars are driven by. The ring itself is the same in every mode.
+typedef enum {
+    // One bar per spectrum band, lowest frequency at the top, running clockwise
+    SOUND_SPHERE_SPECTRUM = 0,
+    // Left half follows the left mic's loudness and right half the right mic's
+    SOUND_SPHERE_DIRECTION = 1,
+} SoundSphereMode;
+
+esp_err_t display_draw_sound_sphere(SoundSphereMode mode);
 
 // Pauses or resumes the refresh, leaving the bars where they are. No-op before
 // display_draw_sound_sphere().

@@ -28,6 +28,8 @@ static DisplayState next_display_state(DisplayState current) {
     case EYE:
         return AUDIO_VIS;
     case AUDIO_VIS:
+        return AUDIO_DIR;
+    case AUDIO_DIR:
         return EYE;
     }
     return EYE;
@@ -98,7 +100,8 @@ void app_main() {
     gpio_isr_handler_add(TEST_BUTTON_PIN, button_isr, NULL);
     bool button_flag;
 
-    err = start_display_task();
+    DisplayState display_state = EYE;
+    err = start_display_task(display_state);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start display task: %s", esp_err_to_name(err));
         return;
@@ -114,9 +117,6 @@ void app_main() {
     PlantState state = plant_get_current_state();
     (void)state;
     bool play_animation = true;
-    // Has to start on whatever the display task drew for itself, or the first
-    // press would ask for the state already on screen and nothing would happen
-    DisplayState display_state = EYE;
 
     while (1) {
         if (xQueueReceive(button_queue, &button_flag, 0)) {

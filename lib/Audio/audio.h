@@ -36,3 +36,8 @@ esp_err_t mic_poll();
 // drawing has something to fade out on. Safe to call from another task while
 // mic_poll() runs.
 esp_err_t mic_get_spectrum(uint8_t* bands, size_t count);
+
+// Copies the newest loudness of each WS slot, 0-255 on the same dB stretch
+// idea as the spectrum: left is the slot read while WS is low, right while it
+// is high. Same validity rules and thread safety as mic_get_spectrum().
+esp_err_t mic_get_levels(uint8_t* left, uint8_t* right);

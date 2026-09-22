@@ -22,7 +22,9 @@ static esp_err_t display_draw(DisplayState target) {
     case EYE:
         return display_draw_eye();
     case AUDIO_VIS:
-        return display_draw_sound_sphere();
+        return display_draw_sound_sphere(SOUND_SPHERE_SPECTRUM);
+    case AUDIO_DIR:
+        return display_draw_sound_sphere(SOUND_SPHERE_DIRECTION);
     }
     return ESP_ERR_INVALID_ARG;
 }
@@ -33,6 +35,7 @@ static void display_clear(DisplayState target) {
         display_clear_eye();
         break;
     case AUDIO_VIS:
+    case AUDIO_DIR:
         display_clear_sound_sphere();
         break;
     }
@@ -44,6 +47,7 @@ static void display_set_animation(bool play) {
         display_set_eye_animation(play);
         break;
     case AUDIO_VIS:
+    case AUDIO_DIR:
         display_set_sound_sphere_animation(play);
         break;
     }
@@ -101,7 +105,7 @@ static void display_task(void* arg) {
     }
 }
 
-esp_err_t start_display_task() {
+esp_err_t start_display_task(DisplayState display_state) {
     if (display_queue != NULL) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -112,11 +116,12 @@ esp_err_t start_display_task() {
         ESP_LOGE(TAG, "Failed to initialize display");
         return err;
     }
-    err = display_draw(state);
+    err = display_draw(display_state);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to draw state %d: %s", state, esp_err_to_name(err));
+        ESP_LOGE(TAG, "Failed to draw state %d: %s", display_state, esp_err_to_name(err));
         return err;
     }
+    state = display_state;
 
     display_queue = xQueueCreate(DISPLAY_QUEUE_LENGTH, sizeof(struct display_task_data_t));
     if (display_queue == NULL) {

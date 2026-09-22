@@ -32,6 +32,7 @@ static struct {
     lv_obj_t* root;
     lv_obj_t* bars[SPHERE_BAR_COUNT];
     lv_timer_t* refresh;
+    SoundSphereMode mode;
     float level[SPHERE_BAR_COUNT];   // smoothed 0..1 height of each band
     int32_t drawn_len[SPHERE_BAR_COUNT];
     float rise;   // SPHERE_RISE and SPHERE_FALL rescaled to one refresh
@@ -71,16 +72,51 @@ static void sphere_place_bar(size_t i, int32_t length) {
     sphere_state.drawn_len[i] = length;
 }
 
+// Fills targets with the 0..1 height each bar is heading for. A mic that is
+// stopped or has not filled a block yet leaves them at zero, so the levels fall
+// and the ring settles at SPHERE_BAR_MIN.
+static void sphere_read_targets(float* targets) {
+    memset(targets, 0, sizeof(float) * SPHERE_BAR_COUNT);
+
+    if (sphere_state.mode == SOUND_SPHERE_SPECTRUM) {
+        uint8_t bands[SPHERE_BAR_COUNT];
+        if (mic_get_spectrum(bands, SPHERE_BAR_COUNT) == ESP_OK) {
+            for (size_t i = 0; i < SPHERE_BAR_COUNT; i++) {
+                targets[i] = bands[i] / 255.0f;
+            }
+        }
+        return;
+    }
+
+    uint8_t left;
+    uint8_t right;
+    if (mic_get_levels(&left, &right) != ESP_OK) {
+        return;
+    }
+
+    // Bar 0 points straight up and they run clockwise, so the first half of
+    // the ring is the right side and the second half the left. The two bars on
+    // the vertical axis belong to neither side and show the mean.
+    const size_t half = SPHERE_BAR_COUNT / 2;
+    for (size_t i = 0; i < SPHERE_BAR_COUNT; i++) {
+        if (i == 0 || i == half) {
+            targets[i] = (left + right) / (2.0f * 255.0f);
+        } else if (i < half) {
+            targets[i] = right / 255.0f;
+        } else {
+            targets[i] = left / 255.0f;
+        }
+    }
+}
+
 static void sphere_refresh_cb(lv_timer_t* timer) {
     LV_UNUSED(timer);
 
-    // A mic that is stopped or has not filled a block yet leaves the levels
-    // falling towards zero, which settles the ring at SPHERE_BAR_MIN.
-    uint8_t bands[SPHERE_BAR_COUNT];
-    bool have_bands = mic_get_spectrum(bands, SPHERE_BAR_COUNT) == ESP_OK;
+    float targets[SPHERE_BAR_COUNT];
+    sphere_read_targets(targets);
 
     for (size_t i = 0; i < SPHERE_BAR_COUNT; i++) {
-        float target = have_bands ? bands[i] / 255.0f : 0.0f;
+        float target = targets[i];
         float rate = target > sphere_state.level[i] ? sphere_state.rise : sphere_state.fall;
         sphere_state.level[i] += (target - sphere_state.level[i]) * rate;
 
@@ -94,7 +130,7 @@ static void sphere_refresh_cb(lv_timer_t* timer) {
     }
 }
 
-esp_err_t display_draw_sound_sphere() {
+esp_err_t display_draw_sound_sphere(SoundSphereMode mode) {
     if (lv_display_get_default() == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -111,6 +147,7 @@ esp_err_t display_draw_sound_sphere() {
     lv_obj_set_size(sphere_state.root, DISPLAY_H_RES, DISPLAY_V_RES);
     lv_obj_set_pos(sphere_state.root, 0, 0);
 
+    sphere_state.mode = mode;
     sphere_state.rise = sphere_rate_per_refresh(SPHERE_RISE);
     sphere_state.fall = sphere_rate_per_refresh(SPHERE_FALL);
 

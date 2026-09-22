@@ -13,5 +13,5 @@ typedef struct display_task_data_t {
 // queue for passing information to the display
 extern QueueHandle_t display_queue;
 
-// initializes and starts FreeRTOS task for displaying content to the screen
-esp_err_t start_display_task();
+// initializes and starts FreeRTOS task for displaying content to the screen, drawing display_state first
+esp_err_t start_display_task(DisplayState display_state);

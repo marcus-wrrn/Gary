@@ -3,7 +3,8 @@
 
 typedef enum DisplayState {
     EYE = 0,
-    AUDIO_VIS = 1
+    AUDIO_VIS = 1,
+    AUDIO_DIR = 2
 } DisplayState;
 
 typedef enum PlantState { 

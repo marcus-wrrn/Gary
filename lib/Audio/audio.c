@@ -21,6 +21,10 @@
 // them together to change how much of the ring a given loudness fills.
 #define MIC_SPECTRUM_FLOOR_DB   (-75.0f)
 #define MIC_SPECTRUM_CEIL_DB    (-15.0f)
+// Same idea for the whole-block loudness of each slot. RMS over the full band
+// sits lower than any single band's peak, so the window sits lower too.
+#define MIC_LEVEL_FLOOR_DB      (-40.0f)
+#define MIC_LEVEL_CEIL_DB       (-30.0f)
 #define RIFF_HEADER_SIZE    12
 #define CHUNK_HEADER_SIZE   8
 #define FMT_CHUNK_MIN_SIZE  16
@@ -49,6 +53,8 @@ static uint8_t mic_band_edges[MIC_BAND_COUNT + 1];
 // both sides take the spinlock; the copy is small enough to do inside it.
 static portMUX_TYPE mic_spectrum_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint8_t mic_spectrum[MIC_BAND_COUNT];
+static uint8_t mic_level_left;
+static uint8_t mic_level_right;
 static bool mic_spectrum_valid = false;
 
 static bool mic_running = false;
@@ -288,6 +294,32 @@ static void mic_build_bands() {
     }
 }
 
+static float mic_db_to_unit(float db, float floor_db, float ceil_db) {
+    float t = (db - floor_db) / (ceil_db - floor_db);
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+    return t;
+}
+
+// RMS of one slot over the block, with the block mean taken off first so the
+// mic's standing DC offset doesn't read as sound.
+static uint8_t mic_slot_level(size_t slot, size_t frames) {
+    float mean = 0.0f;
+    for (size_t i = 0; i < frames; i++) {
+        mean += (float)(mic_buf[i * 2 + slot] >> 8);
+    }
+    mean /= (float)frames;
+
+    float sum_sq = 0.0f;
+    for (size_t i = 0; i < frames; i++) {
+        float sample = ((float)(mic_buf[i * 2 + slot] >> 8) - mean) / MIC_FULL_SCALE;
+        sum_sq += sample * sample;
+    }
+
+    float db = 10.0f * log10f(sum_sq / (float)frames + 1e-18f);
+    return (uint8_t)lroundf(mic_db_to_unit(db, MIC_LEVEL_FLOOR_DB, MIC_LEVEL_CEIL_DB) * 255.0f);
+}
+
 // Transforms one full block and replaces the snapshot. A short block is left
 // alone rather than zero-padded, since the last snapshot is a better answer
 // than a spectrum smeared by the padding.
@@ -297,8 +329,8 @@ static void mic_update_spectrum(size_t frames) {
     }
 
     for (size_t i = 0; i < MIC_FFT_SIZE; i++) {
-        // Both slots are folded together: only one is strapped on this board,
-        // and averaging means the ring moves whichever one turns out to be live.
+        // Both slots are folded together so the spectrum hears the whole room
+        // rather than one side of it.
         float left = (float)(mic_buf[i * 2] >> 8);
         float right = (float)(mic_buf[i * 2 + 1] >> 8);
         mic_fft_re[i] = (left + right) * (0.5f / MIC_FULL_SCALE);
@@ -321,14 +353,17 @@ static void mic_update_spectrum(size_t frames) {
         // n / 2 bins, so this scaling puts a full-scale sine at 0 dB.
         float level = peak * (4.0f / (float)MIC_FFT_SIZE);
         float db = 20.0f * log10f(level + 1e-9f);
-        float t = (db - MIC_SPECTRUM_FLOOR_DB) / (MIC_SPECTRUM_CEIL_DB - MIC_SPECTRUM_FLOOR_DB);
-        if (t < 0.0f) t = 0.0f;
-        if (t > 1.0f) t = 1.0f;
+        float t = mic_db_to_unit(db, MIC_SPECTRUM_FLOOR_DB, MIC_SPECTRUM_CEIL_DB);
         bands[b] = (uint8_t)lroundf(t * 255.0f);
     }
 
+    uint8_t left = mic_slot_level(0, frames);
+    uint8_t right = mic_slot_level(1, frames);
+
     taskENTER_CRITICAL(&mic_spectrum_lock);
     memcpy(mic_spectrum, bands, sizeof(bands));
+    mic_level_left = left;
+    mic_level_right = right;
     mic_spectrum_valid = true;
     taskEXIT_CRITICAL(&mic_spectrum_lock);
 }
@@ -342,6 +377,23 @@ esp_err_t mic_get_spectrum(uint8_t* bands, size_t count) {
     taskENTER_CRITICAL(&mic_spectrum_lock);
     if (mic_spectrum_valid) {
         memcpy(bands, mic_spectrum, sizeof(mic_spectrum));
+    } else {
+        ret = ESP_ERR_INVALID_STATE;
+    }
+    taskEXIT_CRITICAL(&mic_spectrum_lock);
+    return ret;
+}
+
+esp_err_t mic_get_levels(uint8_t* left, uint8_t* right) {
+    if (left == NULL || right == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t ret = ESP_OK;
+    taskENTER_CRITICAL(&mic_spectrum_lock);
+    if (mic_spectrum_valid) {
+        *left = mic_level_left;
+        *right = mic_level_right;
     } else {
         ret = ESP_ERR_INVALID_STATE;
     }
