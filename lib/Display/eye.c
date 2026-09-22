@@ -1,6 +1,7 @@
 #include "eye.h"
 #include <math.h>
 #include <string.h>
+#include "direction.h"
 
 #define EYE_PI            3.14159265f
 #define EYE_COLOR         0xFFFFFF
@@ -29,6 +30,14 @@
 #define EYE_BLINK_UP_MS    500   // opening
 #define EYE_BLINK_PAUSE_MS 1500  // minimum pupil travel time (legs plus pauses) between blinks
 
+
+#define EYE_FOLLOW_TICK_MS      33     // about 30 fps; each step only redraws the pupil's own box
+#define EYE_FOLLOW_OMEGA        11.0f  // spring stiffness in rad/s; settles in about 4 / this seconds
+#define EYE_FOLLOW_DEADBAND     0.2f   // change in gaze needed before the eye glances again
+#define EYE_FOLLOW_DWELL_MS     500    // minimum time between glances
+#define EYE_FOLLOW_LINGER_MS    1200   // how long the eye keeps looking after the sound goes
+#define EYE_FOLLOW_REACH        0.35f  // gaze for a source only just off centre; side-on reaches 1
+
 enum { EYE_LID_UPPER, EYE_LID_CREASE, EYE_LID_LOWER, EYE_LID_COUNT };
 
 // Every part of the eye hangs off this, so tearing the eye down is one delete
@@ -41,6 +50,7 @@ static lv_point_precise_t eye_lashes[EYE_LASH_COUNT][2];
 
 // Shared between the pupil and blink animations so each can re-clip the pupil against the lid
 static struct {
+    EyeMode mode;
     lv_obj_t* blink_lid;
     lv_obj_t* pupil_clip;
     lv_obj_t* pupil;
@@ -49,6 +59,15 @@ static struct {
     float pupil_x;
     float pupil_y;
     float lid_h;  // signed: positive bows up, negative bows down
+
+    // EYE_MODE_FOLLOW_SOUND only
+    lv_timer_t* follow;
+    float gaze;          // where the pupil is now
+    float gaze_vel;      // per second
+    float gaze_target;   // where it is gliding to
+    uint32_t glance_ms;  // tick of the last change to gaze_target
+    uint32_t heard_ms;   // tick of the last block with a side to look at
+    uint32_t step_ms;    // tick of the last spring step
 } eye_state;
 
 static lv_obj_t* eye_create_line(lv_point_precise_t* pts, uint32_t count) {
@@ -113,12 +132,16 @@ static void eye_update_pupil() {
     lv_obj_set_pos(eye_state.pupil, 0, pupil_top - top);
 }
 
-static void eye_pupil_anim_cb(void* var, int32_t v) {
-    LV_UNUSED(var);
-    float t = v / 1000.0f;
+// t runs from -1 (left end of the path) to 1 (right end)
+static void eye_place_pupil(float t) {
     eye_state.pupil_x = DISPLAY_H_RES / 2.0f + EYE_LOOK_X * t;
     eye_state.pupil_y = DISPLAY_V_RES / 2.0f + EYE_LOOK_SAG * (1 - t * t);
     eye_update_pupil();
+}
+
+static void eye_pupil_anim_cb(void* var, int32_t v) {
+    LV_UNUSED(var);
+    eye_place_pupil(v / 1000.0f);
 }
 
 // v runs from 0 (open) to 1000 (closed, lying on the bottom lid)
@@ -188,7 +211,76 @@ static void eye_start_look(uint32_t delay_ms) {
     lv_anim_start(&anim);
 }
 
-esp_err_t display_draw_eye() {
+// Gaze towards the side the sound comes from, or 0 for none. A side always gets at least
+// EYE_FOLLOW_REACH, so a source only just off centre still gets a glance that reads as deliberate.
+static float eye_sound_gaze(SoundDirection* dir) {
+    *dir = direction_get();
+    if (*dir == SOUND_DIR_NONE) {
+        return 0.0f;
+    }
+    float reach = EYE_FOLLOW_REACH + (1.0f - EYE_FOLLOW_REACH) * direction_get_percent() / 100.0f;
+    return *dir == SOUND_DIR_LEFT ? -reach : reach;
+}
+
+static void eye_follow_cb(lv_timer_t* timer) {
+    LV_UNUSED(timer);
+    uint32_t now = lv_tick_get();
+    float dt = lv_tick_diff(now, eye_state.step_ms) / 1000.0f;
+    eye_state.step_ms = now;
+    // A late tick, e.g. after the animation was paused, would otherwise fling the pupil
+    if (dt > 0.1f) dt = 0.1f;
+
+    SoundDirection dir;
+    float wanted = eye_sound_gaze(&dir);
+    if (dir != SOUND_DIR_NONE) {
+        eye_state.heard_ms = now;
+    } else if (lv_tick_diff(now, eye_state.heard_ms) < EYE_FOLLOW_LINGER_MS) {
+        // Keep looking at where the sound was for a moment before drifting back
+        wanted = eye_state.gaze_target;
+    }
+
+    if (fabsf(wanted - eye_state.gaze_target) >= EYE_FOLLOW_DEADBAND &&
+        lv_tick_diff(now, eye_state.glance_ms) >= EYE_FOLLOW_DWELL_MS) {
+        eye_state.gaze_target = wanted;
+        eye_state.glance_ms = now;
+    }
+
+    // Semi-implicit Euler, stable while OMEGA * dt stays well under 1
+    const float w = EYE_FOLLOW_OMEGA;
+    float accel = w * w * (eye_state.gaze_target - eye_state.gaze) - 2.0f * w * eye_state.gaze_vel;
+    eye_state.gaze_vel += accel * dt;
+    eye_state.gaze += eye_state.gaze_vel * dt;
+    if (eye_state.gaze > 1.0f) eye_state.gaze = 1.0f;
+    if (eye_state.gaze < -1.0f) eye_state.gaze = -1.0f;
+
+    // The spring creeps by fractions of a pixel long after it has settled, and moving the clip box
+    // redraws it, so the pupil is only placed when it would land on a different pixel
+    float x = DISPLAY_H_RES / 2.0f + EYE_LOOK_X * eye_state.gaze;
+    float y = DISPLAY_V_RES / 2.0f + EYE_LOOK_SAG * (1 - eye_state.gaze * eye_state.gaze);
+    if (lroundf(x) != lroundf(eye_state.pupil_x) || lroundf(y) != lroundf(eye_state.pupil_y)) {
+        eye_place_pupil(eye_state.gaze);
+    }
+}
+
+static esp_err_t eye_start_follow() {
+    uint32_t now = lv_tick_get();
+    eye_state.gaze = 0.0f;
+    eye_state.gaze_vel = 0.0f;
+    eye_state.gaze_target = 0.0f;
+    eye_state.glance_ms = now;
+    eye_state.heard_ms = now - EYE_FOLLOW_LINGER_MS;
+    eye_state.step_ms = now;
+    eye_place_pupil(0.0f);
+
+    // Blinking is left out here: the eye stays open while it listens
+    eye_state.follow = lv_timer_create(eye_follow_cb, EYE_FOLLOW_TICK_MS, NULL);
+    if (eye_state.follow == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+}
+
+esp_err_t display_draw_eye(EyeMode mode) {
     if (lv_display_get_default() == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -225,6 +317,7 @@ esp_err_t display_draw_eye() {
     lv_obj_set_style_bg_color(pupil, lv_color_hex(EYE_COLOR), 0);
     lv_obj_set_style_bg_opa(pupil, LV_OPA_COVER, 0);
 
+    eye_state.mode = mode;
     eye_state.pupil_clip = pupil_clip;
     eye_state.pupil = pupil;
     eye_state.blink_lid = eye_create_line(eye_lids[EYE_LID_CREASE], 0);
@@ -232,12 +325,19 @@ esp_err_t display_draw_eye() {
     eye_state.pupil_x = cx - EYE_LOOK_X;
     eye_state.pupil_y = cy;
     eye_blink_anim_cb(eye_state.blink_lid, 0);
-    eye_pupil_anim_cb(pupil, -1000);
 
-    // The pupil and blink animations chain into each other, so exactly one of them runs at a time
-    eye_state.look_to = 1000;
-    eye_state.since_blink_ms = 0;
-    eye_start_look(0);
+    if (mode == EYE_MODE_FOLLOW_SOUND) {
+        if (eye_start_follow() != ESP_OK) {
+            display_clear_eye();
+            return ESP_ERR_NO_MEM;
+        }
+    } else {
+        eye_pupil_anim_cb(pupil, -1000);
+        // The pupil and blink animations chain into each other, so exactly one of them runs at a time
+        eye_state.look_to = 1000;
+        eye_state.since_blink_ms = 0;
+        eye_start_look(0);
+    }
 
     // Lashes point straight out from the lower lid's circle, spread along most of the lid
     float span = lower_half * 0.85f;
@@ -273,6 +373,16 @@ void display_set_eye_animation(bool play) {
             lv_anim_pause(anims[i]);
         }
     }
+
+    if (eye_state.follow != NULL) {
+        if (play) {
+            lv_timer_resume(eye_state.follow);
+        } else {
+            lv_timer_pause(eye_state.follow);
+        }
+    }
+    // The spring measures time between steps, so a long pause would read as one huge step
+    eye_state.step_ms = lv_tick_get();
 }
 
 void display_clear_eye() {
@@ -285,6 +395,9 @@ void display_clear_eye() {
     // leg on a pointer that no longer means anything.
     lv_anim_delete(eye_state.pupil, eye_pupil_anim_cb);
     lv_anim_delete(eye_state.blink_lid, eye_blink_anim_cb);
+    if (eye_state.follow != NULL) {
+        lv_timer_delete(eye_state.follow);
+    }
 
     lv_obj_delete(eye_root);
     eye_root = NULL;

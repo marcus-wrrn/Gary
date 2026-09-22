@@ -20,11 +20,11 @@ QueueHandle_t display_queue = NULL;
 static esp_err_t display_draw(DisplayState target) {
     switch (target) {
     case EYE:
-        return display_draw_eye();
+        return display_draw_eye(EYE_MODE_IDLE);
     case AUDIO_VIS:
         return display_draw_sound_sphere(SOUND_SPHERE_SPECTRUM);
     case AUDIO_DIR:
-        return display_draw_sound_sphere(SOUND_SPHERE_DIRECTION);
+        return display_draw_eye(EYE_MODE_FOLLOW_SOUND);
     }
     return ESP_ERR_INVALID_ARG;
 }
@@ -32,10 +32,10 @@ static esp_err_t display_draw(DisplayState target) {
 static void display_clear(DisplayState target) {
     switch (target) {
     case EYE:
+    case AUDIO_DIR:
         display_clear_eye();
         break;
     case AUDIO_VIS:
-    case AUDIO_DIR:
         display_clear_sound_sphere();
         break;
     }
@@ -44,10 +44,10 @@ static void display_clear(DisplayState target) {
 static void display_set_animation(bool play) {
     switch (state) {
     case EYE:
+    case AUDIO_DIR:
         display_set_eye_animation(play);
         break;
     case AUDIO_VIS:
-    case AUDIO_DIR:
         display_set_sound_sphere_animation(play);
         break;
     }

@@ -5,6 +5,7 @@
 #include "freertos/FreeRTOS.h"
 #include "sd_card.h"
 #include "fft.h"
+#include "direction.h"
 #include "i2s.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -12,17 +13,12 @@
 #define STREAM_BUFFER_SIZE  4096
 #define MIC_FRAMES_PER_READ 256
 #define MIC_LOG_INTERVAL_US (1000 * 1000)
-// One read is one transform, so a snapshot lands every MIC_FFT_SIZE frames
 #define MIC_FFT_SIZE        MIC_FRAMES_PER_READ
-// The mic left-justifies 24 bits in the slot, so this is what a full-scale sample comes to
 #define MIC_FULL_SCALE      8388608.0f
-// Window the band levels are stretched over, in dB relative to full scale. Room
-// tone sits near the floor and a voice a foot away reaches the ceiling; move
-// them together to change how much of the ring a given loudness fills.
+
 #define MIC_SPECTRUM_FLOOR_DB   (-75.0f)
 #define MIC_SPECTRUM_CEIL_DB    (-15.0f)
-// Same idea for the whole-block loudness of each slot. RMS over the full band
-// sits lower than any single band's peak, so the window sits lower too.
+
 #define MIC_LEVEL_FLOOR_DB      (-40.0f)
 #define MIC_LEVEL_CEIL_DB       (-30.0f)
 #define RIFF_HEADER_SIZE    12
@@ -434,6 +430,7 @@ esp_err_t mic_start() {
 
     mic_build_bands();
     mic_reset_window();
+    direction_reset();
     mic_running = true;
     ESP_LOGI(TAG, "Mic listening: %u Hz, %u-bit, left slot",
              (unsigned)MIC_SAMPLE_RATE, (unsigned)MIC_BIT_DEPTH);
@@ -463,6 +460,7 @@ esp_err_t mic_stop() {
     taskENTER_CRITICAL(&mic_spectrum_lock);
     mic_spectrum_valid = false;
     taskEXIT_CRITICAL(&mic_spectrum_lock);
+    direction_reset();
     return ESP_OK;
 }
 
@@ -489,6 +487,7 @@ esp_err_t mic_poll() {
     mic_frames += frames;
 
     mic_update_spectrum(frames);
+    direction_process(mic_buf, frames);
 
     if (esp_timer_get_time() - mic_window_start_us < MIC_LOG_INTERVAL_US) {
         return ESP_OK;

@@ -100,7 +100,7 @@ void app_main() {
     gpio_isr_handler_add(TEST_BUTTON_PIN, button_isr, NULL);
     bool button_flag;
 
-    DisplayState display_state = EYE;
+    DisplayState display_state = AUDIO_DIR;
     err = start_display_task(display_state);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start display task: %s", esp_err_to_name(err));

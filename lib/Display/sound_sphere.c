@@ -1,7 +1,9 @@
 #include "sound_sphere.h"
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 #include "audio.h"
+#include "direction.h"
 
 #define SPHERE_PI           3.14159265f
 #define SPHERE_COLOR        0xFFFFFF
@@ -10,6 +12,12 @@
 #define SPHERE_RADIUS       70   // circle the bars stand on, centre to bar base
 #define SPHERE_BAR_MIN      5    // bar length at silence, so the ring stays readable in a quiet room
 #define SPHERE_BAR_MAX      44   // SPHERE_RADIUS + this has to stay inside half the narrow axis
+// Gap between the direction label and the bottom edge. The ring reaches
+// V_RES / 2 + SPHERE_RADIUS + SPHERE_BAR_MAX, which leaves room below it.
+#define SPHERE_LABEL_MARGIN 16
+// The percentage moves every block, so it's rounded to this step to keep the
+// text from flickering through every value on its way
+#define SPHERE_LABEL_STEP   5
 
 // Every refresh redraws most of the ring, which is the expensive part on an SPI
 // panel; this is the knob to turn if the display task starts falling behind.
@@ -33,6 +41,9 @@ static struct {
     lv_obj_t* bars[SPHERE_BAR_COUNT];
     lv_timer_t* refresh;
     SoundSphereMode mode;
+    lv_obj_t* label;   // direction mode only, NULL otherwise
+    SoundDirection shown_dir;
+    int shown_percent;
     float level[SPHERE_BAR_COUNT];   // smoothed 0..1 height of each band
     int32_t drawn_len[SPHERE_BAR_COUNT];
     float rise;   // SPHERE_RISE and SPHERE_FALL rescaled to one refresh
@@ -109,11 +120,36 @@ static void sphere_read_targets(float* targets) {
     }
 }
 
+// Shows how far to one side the sound is, e.g. "45% Left", or "N/A"
+static void sphere_update_label() {
+    SoundDirection dir = direction_get();
+    int percent = (direction_get_percent() + SPHERE_LABEL_STEP / 2) / SPHERE_LABEL_STEP * SPHERE_LABEL_STEP;
+
+    // Setting the text reflows and repaints the label, so only on a change
+    if (dir == sphere_state.shown_dir && percent == sphere_state.shown_percent) {
+        return;
+    }
+    sphere_state.shown_dir = dir;
+    sphere_state.shown_percent = percent;
+
+    if (dir == SOUND_DIR_NONE) {
+        lv_label_set_text_static(sphere_state.label, direction_name(dir));
+        return;
+    }
+    char text[16];
+    snprintf(text, sizeof(text), "%d%% %s", percent, direction_name(dir));
+    lv_label_set_text(sphere_state.label, text);
+}
+
 static void sphere_refresh_cb(lv_timer_t* timer) {
     LV_UNUSED(timer);
 
     float targets[SPHERE_BAR_COUNT];
     sphere_read_targets(targets);
+
+    if (sphere_state.label != NULL) {
+        sphere_update_label();
+    }
 
     for (size_t i = 0; i < SPHERE_BAR_COUNT; i++) {
         float target = targets[i];
@@ -162,6 +198,15 @@ esp_err_t display_draw_sound_sphere(SoundSphereMode mode) {
         // Nothing is drawn yet, so no length can match and the first placement stands
         sphere_state.drawn_len[i] = -1;
         sphere_place_bar(i, SPHERE_BAR_MIN);
+    }
+
+    if (mode == SOUND_SPHERE_DIRECTION) {
+        sphere_state.label = lv_label_create(sphere_state.root);
+        lv_obj_set_style_text_color(sphere_state.label, lv_color_hex(SPHERE_COLOR), 0);
+        sphere_state.shown_dir = SOUND_DIR_NONE;
+        sphere_state.shown_percent = 0;
+        lv_label_set_text_static(sphere_state.label, direction_name(SOUND_DIR_NONE));
+        lv_obj_align(sphere_state.label, LV_ALIGN_BOTTOM_MID, 0, -SPHERE_LABEL_MARGIN);
     }
 
     // Levels are pulled from the mic rather than pushed, so this is a plain
