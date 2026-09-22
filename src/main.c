@@ -20,6 +20,19 @@ static const char* TAG = "INIT";
 static volatile uint64_t last_isr_time = 0;
 static QueueHandle_t button_queue;
 
+// Cycles the display through its states in order, wrapping at the end. Written
+// out rather than counted modulo so adding a state without extending the cycle
+// is a compiler warning instead of a state that never comes up.
+static DisplayState next_display_state(DisplayState current) {
+    switch (current) {
+    case EYE:
+        return AUDIO_VIS;
+    case AUDIO_VIS:
+        return EYE;
+    }
+    return EYE;
+}
+
 static void IRAM_ATTR button_isr(void *arg) {
     uint64_t now = esp_timer_get_time();
     if (now - last_isr_time > DEBOUNCE_DELAY_US) {
@@ -101,12 +114,16 @@ void app_main() {
     PlantState state = plant_get_current_state();
     (void)state;
     bool play_animation = true;
+    // Has to start on whatever the display task drew for itself, or the first
+    // press would ask for the state already on screen and nothing would happen
+    DisplayState display_state = EYE;
 
     while (1) {
         if (xQueueReceive(button_queue, &button_flag, 0)) {
-            play_animation = !play_animation;
+            display_state = next_display_state(display_state);
             display_task_data_t anim = {
-                .play_animation = play_animation
+                .play_animation = play_animation,
+                .state = display_state
             };
             xQueueSendToBack(display_queue, &anim, 0);
 
@@ -114,7 +131,7 @@ void app_main() {
                 .track = MEEP
             };
             xQueueSendToBack(sound_queue, &sound, 0);
-            ESP_LOGI(TAG, "Button pressed");
+            ESP_LOGI(TAG, "Button pressed, display state %d", display_state);
         }
 
 

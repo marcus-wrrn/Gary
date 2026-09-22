@@ -10,3 +10,7 @@ esp_err_t display_draw_eye();
 
 // Pauses or resumes the look and blink animations where they are. No-op before display_draw_eye().
 void display_set_eye_animation(bool play);
+
+// Stops the animations and removes the eye from the screen, leaving it ready to
+// be drawn again. No-op if the eye is not on screen.
+void display_clear_eye();

@@ -1,5 +1,6 @@
 #include "sound_sphere.h"
 #include <math.h>
+#include <string.h>
 #include "audio.h"
 
 #define SPHERE_PI           3.14159265f
@@ -23,6 +24,8 @@
 static lv_point_precise_t sphere_points[SPHERE_BAR_COUNT][2];
 
 static struct {
+    // Every bar hangs off this, so tearing the ring down is one delete
+    lv_obj_t* root;
     lv_obj_t* bars[SPHERE_BAR_COUNT];
     lv_timer_t* refresh;
     float level[SPHERE_BAR_COUNT];   // smoothed 0..1 height of each band
@@ -83,10 +86,21 @@ esp_err_t display_draw_sound_sphere() {
     if (lv_display_get_default() == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
+    if (sphere_state.root != NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
 
-    lv_obj_t* screen = lv_screen_active();
+    sphere_state.root = lv_obj_create(lv_screen_active());
+    if (sphere_state.root == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    lv_obj_remove_style_all(sphere_state.root);
+    lv_obj_remove_flag(sphere_state.root, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_size(sphere_state.root, DISPLAY_H_RES, DISPLAY_V_RES);
+    lv_obj_set_pos(sphere_state.root, 0, 0);
+
     for (size_t i = 0; i < SPHERE_BAR_COUNT; i++) {
-        lv_obj_t* bar = lv_line_create(screen);
+        lv_obj_t* bar = lv_line_create(sphere_state.root);
         lv_obj_set_style_line_width(bar, SPHERE_STROKE, 0);
         lv_obj_set_style_line_color(bar, lv_color_hex(SPHERE_COLOR), 0);
         lv_obj_set_style_line_rounded(bar, true, 0);
@@ -102,6 +116,8 @@ esp_err_t display_draw_sound_sphere() {
     // timer instead of an lv_anim: there is no end state to animate towards.
     sphere_state.refresh = lv_timer_create(sphere_refresh_cb, SPHERE_REFRESH_MS, NULL);
     if (sphere_state.refresh == NULL) {
+        lv_obj_delete(sphere_state.root);
+        sphere_state.root = NULL;
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
@@ -116,4 +132,16 @@ void display_set_sound_sphere_animation(bool play) {
     } else {
         lv_timer_pause(sphere_state.refresh);
     }
+}
+
+void display_clear_sound_sphere() {
+    if (sphere_state.root == NULL) {
+        return;
+    }
+
+    // The timer is not an object and so would outlive the bars, and its next
+    // tick would place them through pointers that have already been freed.
+    lv_timer_delete(sphere_state.refresh);
+    lv_obj_delete(sphere_state.root);
+    memset(&sphere_state, 0, sizeof(sphere_state));
 }

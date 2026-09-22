@@ -1,5 +1,6 @@
 #include "eye.h"
 #include <math.h>
+#include <string.h>
 
 #define EYE_PI            3.14159265f
 #define EYE_COLOR         0xFFFFFF
@@ -30,6 +31,10 @@
 
 enum { EYE_LID_UPPER, EYE_LID_CREASE, EYE_LID_LOWER, EYE_LID_COUNT };
 
+// Every part of the eye hangs off this, so tearing the eye down is one delete
+// rather than a list of objects that has to be kept in step with the drawing
+static lv_obj_t* eye_root = NULL;
+
 // lv_line keeps a pointer to its points, so they must outlive the lines
 static lv_point_precise_t eye_lids[EYE_LID_COUNT][EYE_LID_PTS];
 static lv_point_precise_t eye_lashes[EYE_LASH_COUNT][2];
@@ -47,7 +52,7 @@ static struct {
 } eye_state;
 
 static lv_obj_t* eye_create_line(lv_point_precise_t* pts, uint32_t count) {
-    lv_obj_t* line = lv_line_create(lv_screen_active());
+    lv_obj_t* line = lv_line_create(eye_root);
     lv_line_set_points(line, pts, count);
     lv_obj_set_style_line_width(line, EYE_STROKE, 0);
     lv_obj_set_style_line_color(line, lv_color_hex(EYE_COLOR), 0);
@@ -187,8 +192,19 @@ esp_err_t display_draw_eye() {
     if (lv_display_get_default() == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
+    if (eye_root != NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
 
-    lv_obj_t* screen = lv_screen_active();
+    eye_root = lv_obj_create(lv_screen_active());
+    if (eye_root == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    lv_obj_remove_style_all(eye_root);
+    lv_obj_remove_flag(eye_root, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_size(eye_root, DISPLAY_H_RES, DISPLAY_V_RES);
+    lv_obj_set_pos(eye_root, 0, 0);
+
     float cx = DISPLAY_H_RES / 2.0f;
     float cy = DISPLAY_V_RES / 2.0f;
 
@@ -198,7 +214,7 @@ esp_err_t display_draw_eye() {
     eye_draw_lid(eye_lids[EYE_LID_LOWER], cx, cy, EYE_LOWER_LID_H, false, &lower_cy, &lower_r, &lower_half);
 
     // Children are clipped to their parent, so the pupil lives in a transparent box whose top edge tracks the lid
-    lv_obj_t* pupil_clip = lv_obj_create(screen);
+    lv_obj_t* pupil_clip = lv_obj_create(eye_root);
     lv_obj_remove_style_all(pupil_clip);
     lv_obj_remove_flag(pupil_clip, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
 
@@ -257,4 +273,20 @@ void display_set_eye_animation(bool play) {
             lv_anim_pause(anims[i]);
         }
     }
+}
+
+void display_clear_eye() {
+    if (eye_root == NULL) {
+        return;
+    }
+
+    // The animations chain into each other, so they are stopped before the
+    // objects go: a completion callback firing mid-delete would start the next
+    // leg on a pointer that no longer means anything.
+    lv_anim_delete(eye_state.pupil, eye_pupil_anim_cb);
+    lv_anim_delete(eye_state.blink_lid, eye_blink_anim_cb);
+
+    lv_obj_delete(eye_root);
+    eye_root = NULL;
+    memset(&eye_state, 0, sizeof(eye_state));
 }
