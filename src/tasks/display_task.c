@@ -86,7 +86,7 @@ static void display_task(void* arg) {
         if (wait_ms > DISPLAY_MAX_WAIT_MS) {
             wait_ms = DISPLAY_MAX_WAIT_MS;
         }
-        // With a 100 Hz tick short waits round to 0 ticks, which would spin and starve lower-priority tasks
+        // A 0 ms wait rounds to 0 ticks, which would spin and starve lower-priority tasks
         TickType_t wait_ticks = pdMS_TO_TICKS(wait_ms);
         if (wait_ticks == 0) {
             wait_ticks = 1;

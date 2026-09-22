@@ -13,10 +13,14 @@
 
 // Every refresh redraws most of the ring, which is the expensive part on an SPI
 // panel; this is the knob to turn if the display task starts falling behind.
-#define SPHERE_REFRESH_MS   40
+// Matches the mic, which finishes a spectrum every 256 samples at 16 kHz.
+#define SPHERE_REFRESH_MS   16
 
-// Fraction of the remaining distance a bar covers per refresh. Rising fast and
-// falling slowly is what makes a transient read as a shape rather than a flicker.
+// Fraction of the remaining distance a bar covers per SPHERE_RATE_REF_MS. Rising
+// fast and falling slowly is what makes a transient read as a shape rather than
+// a flicker. They are rescaled to the refresh period, so changing
+// SPHERE_REFRESH_MS changes smoothness without changing how the bars move.
+#define SPHERE_RATE_REF_MS  40.0f
 #define SPHERE_RISE         0.55f
 #define SPHERE_FALL         0.12f
 
@@ -30,7 +34,15 @@ static struct {
     lv_timer_t* refresh;
     float level[SPHERE_BAR_COUNT];   // smoothed 0..1 height of each band
     int32_t drawn_len[SPHERE_BAR_COUNT];
+    float rise;   // SPHERE_RISE and SPHERE_FALL rescaled to one refresh
+    float fall;
 } sphere_state;
+
+// Covering fraction r per reference period leaves (1 - r) behind, so n shorter
+// steps covering the same ground each leave (1 - r)^(1/n)
+static float sphere_rate_per_refresh(float rate) {
+    return 1.0f - powf(1.0f - rate, SPHERE_REFRESH_MS / SPHERE_RATE_REF_MS);
+}
 
 // Lays one bar along its spoke. The points are kept relative to the object and
 // the object is moved to the bar's own bounding box, so a redraw only dirties
@@ -69,7 +81,7 @@ static void sphere_refresh_cb(lv_timer_t* timer) {
 
     for (size_t i = 0; i < SPHERE_BAR_COUNT; i++) {
         float target = have_bands ? bands[i] / 255.0f : 0.0f;
-        float rate = target > sphere_state.level[i] ? SPHERE_RISE : SPHERE_FALL;
+        float rate = target > sphere_state.level[i] ? sphere_state.rise : sphere_state.fall;
         sphere_state.level[i] += (target - sphere_state.level[i]) * rate;
 
         int32_t length = SPHERE_BAR_MIN +
@@ -98,6 +110,9 @@ esp_err_t display_draw_sound_sphere() {
     lv_obj_remove_flag(sphere_state.root, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_size(sphere_state.root, DISPLAY_H_RES, DISPLAY_V_RES);
     lv_obj_set_pos(sphere_state.root, 0, 0);
+
+    sphere_state.rise = sphere_rate_per_refresh(SPHERE_RISE);
+    sphere_state.fall = sphere_rate_per_refresh(SPHERE_FALL);
 
     for (size_t i = 0; i < SPHERE_BAR_COUNT; i++) {
         lv_obj_t* bar = lv_line_create(sphere_state.root);

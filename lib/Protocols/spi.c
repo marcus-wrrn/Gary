@@ -32,7 +32,9 @@ esp_err_t spi_init() {
     }
 
     spi_device_interface_config_t dev_config = {
-        .clock_speed_hz = 18 * 1000 * 1000,
+        // Above 26 MHz only works because these are SPI2's IOMUX pins; routing
+        // through the GPIO matrix instead would need this dropped back down.
+        .clock_speed_hz = 40 * 1000 * 1000,
         .mode = 0,
         .spics_io_num = SPI_CS_PIN,
         .queue_size = 7,
