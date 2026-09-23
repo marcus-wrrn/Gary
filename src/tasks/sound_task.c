@@ -18,7 +18,7 @@ static void sound_handle_message(const struct sound_task_data_t* msg) {
     esp_err_t err = ESP_OK;
     switch (msg->track) {
     case MEEP:
-        err = play_track("/plant/meep.wav");
+        //err = play_track("/plant/meep.wav");
         break;
     default:
         ESP_LOGW(TAG, "Unknown track: %d", msg->track);

@@ -1,4 +1,5 @@
 #pragma once
+#include <stdbool.h>
 #include <stddef.h>
 #include "gpio.h"
 
@@ -17,6 +18,21 @@ esp_err_t i2s_disable_tx();
 esp_err_t i2s_enable_rx();
 esp_err_t i2s_disable_rx();
 
+// The third mic sits on a second controller, a receive-only slave whose BCLK
+// and WS pins are jumpered to the ones TX drives. False when the board has no
+// I2S_DIN2_PIN, in which case capture carries on with the main pair alone.
+bool i2s_has_aux();
+
+// Starts the main and aux receivers so they land on the same frame: both are
+// armed before TX starts the clock, which enabling RX on its own can't
+// promise. Everything must be disabled first. Stopping takes all three down.
+esp_err_t i2s_start_capture();
+esp_err_t i2s_stop_capture();
+
+// True once either receiver has dropped a block since capture started. The
+// two streams have drifted apart by then and capture has to be restarted.
+bool i2s_capture_overflowed();
+
 esp_err_t i2s_play_beep(uint32_t freq_hz, uint32_t duration_ms);
 
 // Retunes the bus to match a PCM stream so samples can be sent through without
@@ -33,3 +49,7 @@ esp_err_t i2s_write(const void* data, size_t len, size_t* bytes_written);
 // Reads PCM samples from the mic, blocking until the DMA buffers have filled or
 // I2S_READ_TIMEOUT_MS passes. len must be a whole number of frames.
 esp_err_t i2s_read(void* data, size_t len, size_t* bytes_read);
+
+// Same as i2s_read(), from the aux mic's controller. Frame n of each stream
+// was sampled at the same instant, as long as both are read in equal lengths.
+esp_err_t i2s_read_aux(void* data, size_t len, size_t* bytes_read);

@@ -39,6 +39,8 @@ typedef struct {
 } slot_stats_t;
 
 static int32_t mic_buf[MIC_FRAMES_PER_READ * 2];
+// The third mic's controller, same layout, with the mic on the left slot
+static int32_t mic_aux_buf[MIC_FRAMES_PER_READ * 2];
 static float mic_fft_re[MIC_FFT_SIZE];
 static float mic_fft_im[MIC_FFT_SIZE];
 static float mic_fft_mags[MIC_FFT_SIZE / 2];
@@ -57,6 +59,8 @@ static bool mic_running = false;
 static int64_t mic_window_start_us = 0;
 static slot_stats_t mic_left;
 static slot_stats_t mic_right;
+static slot_stats_t mic_aux;
+static bool mic_has_aux = false;
 static uint32_t mic_frames = 0;
 
 typedef struct {
@@ -249,6 +253,7 @@ static esp_err_t play_wav(const char* filename) {
 static void mic_reset_window() {
     memset(&mic_left, 0, sizeof(mic_left));
     memset(&mic_right, 0, sizeof(mic_right));
+    memset(&mic_aux, 0, sizeof(mic_aux));
     mic_frames = 0;
     mic_window_start_us = esp_timer_get_time();
 }
@@ -404,7 +409,7 @@ esp_err_t mic_start() {
 
     // Retuning needs the bus idle, and the mic then needs TX running to be
     // clocked at all. TX sends silence the whole time it listens.
-    esp_err_t ret = i2s_disable_tx();
+    esp_err_t ret = i2s_stop_capture();
     if (ret != ESP_OK) {
         return ret;
     }
@@ -417,23 +422,19 @@ esp_err_t mic_start() {
         return ret;
     }
 
-    ret = i2s_enable_tx();
+    ret = i2s_start_capture();
     if (ret != ESP_OK) {
         return ret;
     }
 
-    ret = i2s_enable_rx();
-    if (ret != ESP_OK) {
-        i2s_disable_tx();
-        return ret;
-    }
-
+    mic_has_aux = i2s_has_aux();
     mic_build_bands();
     mic_reset_window();
     direction_reset();
     mic_running = true;
-    ESP_LOGI(TAG, "Mic listening: %u Hz, %u-bit, left slot",
-             (unsigned)MIC_SAMPLE_RATE, (unsigned)MIC_BIT_DEPTH);
+    ESP_LOGI(TAG, "Mic listening: %u Hz, %u-bit, %s",
+             (unsigned)MIC_SAMPLE_RATE, (unsigned)MIC_BIT_DEPTH,
+             mic_has_aux ? "3 mics" : "2 mics, no aux");
     return ESP_OK;
 }
 
@@ -442,13 +443,8 @@ esp_err_t mic_stop() {
         return ESP_OK;
     }
 
-    esp_err_t ret = i2s_disable_rx();
-    if (ret != ESP_OK) {
-        return ret;
-    }
-
     // The clock was only running for the mic's benefit, so it stops too.
-    ret = i2s_disable_tx();
+    esp_err_t ret = i2s_stop_capture();
     if (ret != ESP_OK) {
         return ret;
     }
@@ -473,33 +469,64 @@ esp_err_t mic_poll() {
         return ESP_ERR_INVALID_STATE;
     }
 
+    // A dropped block on either controller leaves one stream ahead of the
+    // other for good, which would read as a steady false delay, so both are
+    // restarted together to line them back up.
+    if (i2s_capture_overflowed()) {
+        ESP_LOGW(TAG, "Mic fell behind, restarting capture to resync");
+        esp_err_t ret = i2s_stop_capture();
+        if (ret == ESP_OK) {
+            ret = i2s_start_capture();
+        }
+        direction_reset();
+        return ret;
+    }
+
     size_t bytes_read;
     esp_err_t ret = i2s_read(mic_buf, sizeof(mic_buf), &bytes_read);
     if (ret != ESP_OK) {
         return ret;
     }
-
     size_t frames = bytes_read / (sizeof(int32_t) * 2);
+
+    // Read in the same length as the main block, so frame n of each lines up
+    const int32_t* aux = NULL;
+    if (mic_has_aux) {
+        size_t aux_bytes;
+        ret = i2s_read_aux(mic_aux_buf, bytes_read, &aux_bytes);
+        if (ret != ESP_OK) {
+            return ret;
+        }
+        if (aux_bytes == bytes_read) {
+            aux = mic_aux_buf;
+        }
+    }
+
     for (size_t i = 0; i < frames; i++) {
         mic_accumulate(&mic_left, mic_buf[i * 2]);
         mic_accumulate(&mic_right, mic_buf[i * 2 + 1]);
+        if (aux != NULL) {
+            mic_accumulate(&mic_aux, aux[i * 2]);
+        }
     }
     mic_frames += frames;
 
     mic_update_spectrum(frames);
-    direction_process(mic_buf, frames);
+    direction_process(mic_buf, aux, frames);
 
     if (esp_timer_get_time() - mic_window_start_us < MIC_LOG_INTERVAL_US) {
         return ESP_OK;
     }
 
     if (mic_frames > 0) {
-        ESP_LOGI(TAG, "Mic %u frames | L: peak %ld avg %ld dead %u%% | R: peak %ld avg %ld dead %u%%",
+        ESP_LOGI(TAG, "Mic %u frames | L: peak %ld avg %ld dead %u%% | R: peak %ld avg %ld dead %u%% | A: peak %ld avg %ld dead %u%%",
                  (unsigned)mic_frames,
                  (long)mic_left.peak, (long)(mic_left.total / mic_frames),
                  (unsigned)(mic_left.dead * 100 / mic_frames),
                  (long)mic_right.peak, (long)(mic_right.total / mic_frames),
-                 (unsigned)(mic_right.dead * 100 / mic_frames));
+                 (unsigned)(mic_right.dead * 100 / mic_frames),
+                 (long)mic_aux.peak, (long)(mic_aux.total / mic_frames),
+                 (unsigned)(mic_aux.dead * 100 / mic_frames));
     } else {
         ESP_LOGW(TAG, "Mic returned no frames");
     }

@@ -15,8 +15,9 @@
 
 esp_err_t play_track(const char* filename);
 
-// Starts and stops draining the I2S RX channel. TX and RX share one clock, so
-// play_track() borrows the bus while it runs and hands it back afterwards.
+// Starts and stops draining the I2S RX channels, the main pair and the third
+// mic's together. They all share one clock with TX, so play_track() borrows
+// the bus while it runs and hands it back afterwards.
 esp_err_t mic_start();
 esp_err_t mic_stop();
 

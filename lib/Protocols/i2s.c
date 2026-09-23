@@ -1,6 +1,7 @@
 #include "i2s.h"
 #include "freertos/FreeRTOS.h"
 #include "driver/i2s_std.h"
+#include "esp_attr.h"
 #include "esp_log.h"
 static const char* TAG = "I2S";
 
@@ -8,17 +9,49 @@ static const char* TAG = "I2S";
 #define BUFFER_LEN 64
 i2s_chan_handle_t tx_handle;
 i2s_chan_handle_t rx_handle;
+static i2s_chan_handle_t aux_handle = NULL;
 
-// Enabling a channel that is already running is an error, and both have to be
-// idle before the shared clock can be retuned, so the state is tracked here
-// rather than left to every caller to remember.
 static bool tx_enabled = false;
 static bool rx_enabled = false;
+static bool aux_enabled = false;
+static volatile bool capture_overflowed = false;
+
+static bool IRAM_ATTR i2s_on_recv_overflow(i2s_chan_handle_t handle, i2s_event_data_t* event, void* user_ctx) {
+    capture_overflowed = true;
+    return false;
+}
+
+static esp_err_t i2s_init_aux(const i2s_std_config_t* main_cfg) {
+    if (I2S_DIN2_PIN == GPIO_NUM_NC) {
+        return ESP_OK;
+    }
+
+    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_1, I2S_ROLE_SLAVE);
+    esp_err_t ret = i2s_new_channel(&chan_cfg, NULL, &aux_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Unable to initialize aux RX channel");
+        return ret;
+    }
+
+    i2s_std_config_t aux_cfg = *main_cfg;
+    aux_cfg.gpio_cfg.bclk = I2S_BCLK2_PIN;
+    aux_cfg.gpio_cfg.ws = I2S_WS2_PIN;
+    aux_cfg.gpio_cfg.dout = I2S_GPIO_UNUSED;
+    aux_cfg.gpio_cfg.din = I2S_DIN2_PIN;
+
+    ret = i2s_channel_init_std_mode(aux_handle, &aux_cfg);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Unable to initialize aux RX channel config");
+        return ret;
+    }
+
+    i2s_event_callbacks_t callbacks = { .on_recv_q_ovf = i2s_on_recv_overflow };
+    return i2s_channel_register_event_callback(aux_handle, &callbacks, NULL);
+}
 
 esp_err_t i2s_init() {
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
-    // TX runs whenever the mic listens, purely to generate the clock, so the
-    // idle buffers have to send silence instead of repeating the last track.
+    // TX runs whenever the mic is listening, to generate the clock pulse
     chan_cfg.auto_clear = true;
     esp_err_t ret = i2s_new_channel(&chan_cfg, &tx_handle, &rx_handle);
     if (ret != ESP_OK) {
@@ -55,7 +88,14 @@ esp_err_t i2s_init() {
         return ret;
     }
 
-    return ret;
+    i2s_event_callbacks_t callbacks = { .on_recv_q_ovf = i2s_on_recv_overflow };
+    ret = i2s_channel_register_event_callback(rx_handle, &callbacks, NULL);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Unable to register RX callbacks");
+        return ret;
+    }
+
+    return i2s_init_aux(&std_cfg);
 }
 
 esp_err_t i2s_enable_tx() {
@@ -92,8 +132,6 @@ esp_err_t i2s_enable_rx() {
     }
 
     if (!tx_enabled) {
-        // Without the TX module clocking the bus the mic is never strobed and
-        // the read below would block until the timeout with nothing to show.
         ESP_LOGE(TAG, "RX needs TX enabled to receive a clock");
         return ESP_ERR_INVALID_STATE;
     }
@@ -121,6 +159,63 @@ esp_err_t i2s_disable_rx() {
     return ESP_OK;
 }
 
+bool i2s_has_aux() {
+    return aux_handle != NULL;
+}
+
+esp_err_t i2s_start_capture() {
+    if (tx_enabled || rx_enabled || aux_enabled) {
+        ESP_LOGE(TAG, "Capture has to start from an idle bus");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t ret = i2s_channel_enable(rx_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Unable to enable RX channel");
+        return ret;
+    }
+    rx_enabled = true;
+
+    if (aux_handle != NULL) {
+        ret = i2s_channel_enable(aux_handle);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Unable to enable aux RX channel");
+            i2s_stop_capture();
+            return ret;
+        }
+        aux_enabled = true;
+    }
+
+    capture_overflowed = false;
+    ret = i2s_enable_tx();
+    if (ret != ESP_OK) {
+        i2s_stop_capture();
+    }
+    return ret;
+}
+
+esp_err_t i2s_stop_capture() {
+    // TX goes first so the clock stops before the receivers are torn down.
+    esp_err_t ret = i2s_disable_tx();
+
+    if (aux_enabled) {
+        esp_err_t aux_ret = i2s_channel_disable(aux_handle);
+        if (aux_ret == ESP_OK) {
+            aux_enabled = false;
+        } else {
+            ESP_LOGE(TAG, "Unable to disable aux RX channel");
+            ret = (ret == ESP_OK) ? aux_ret : ret;
+        }
+    }
+
+    esp_err_t rx_ret = i2s_disable_rx();
+    return (ret == ESP_OK) ? rx_ret : ret;
+}
+
+bool i2s_capture_overflowed() {
+    return capture_overflowed;
+}
+
 esp_err_t i2s_configure_stream(uint32_t sample_rate, uint16_t bit_depth, uint16_t num_channels) {
     if (num_channels != 1 && num_channels != 2) {
         ESP_LOGE(TAG, "Unsupported channel count: %u", (unsigned)num_channels);
@@ -131,8 +226,8 @@ esp_err_t i2s_configure_stream(uint32_t sample_rate, uint16_t bit_depth, uint16_
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (tx_enabled || rx_enabled) {
-        ESP_LOGE(TAG, "Both channels must be disabled before retuning the bus");
+    if (tx_enabled || rx_enabled || aux_enabled) {
+        ESP_LOGE(TAG, "Every channel must be disabled before retuning the bus");
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -141,12 +236,9 @@ esp_err_t i2s_configure_stream(uint32_t sample_rate, uint16_t bit_depth, uint16_
     i2s_std_slot_config_t slot_cfg =
         I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG((i2s_data_bit_width_t)bit_depth, slot_mode);
 
-    // Both halves get retuned because they share one set of registers, and the
-    // slot goes first in each: the driver derives BCLK from the slot width it
-    // currently holds, so setting the clock ahead of the slot sizes it against
-    // the format being replaced and leaves the bus running at the wrong rate.
-    i2s_chan_handle_t handles[] = { tx_handle, rx_handle };
-    for (int i = 0; i < 2; i++) {
+    i2s_chan_handle_t handles[] = { tx_handle, rx_handle, aux_handle };
+    int count = (aux_handle != NULL) ? 3 : 2;
+    for (int i = 0; i < count; i++) {
         esp_err_t ret = i2s_channel_reconfig_std_slot(handles[i], &slot_cfg);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "Unable to set slot format");
@@ -173,6 +265,22 @@ esp_err_t i2s_read(void* data, size_t len, size_t* bytes_read) {
                                      pdMS_TO_TICKS(I2S_READ_TIMEOUT_MS));
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Unable to read samples");
+    }
+    return ret;
+}
+
+esp_err_t i2s_read_aux(void* data, size_t len, size_t* bytes_read) {
+    if (data == NULL || bytes_read == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (aux_handle == NULL) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    esp_err_t ret = i2s_channel_read(aux_handle, data, len, bytes_read,
+                                     pdMS_TO_TICKS(I2S_READ_TIMEOUT_MS));
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Unable to read aux samples");
     }
     return ret;
 }

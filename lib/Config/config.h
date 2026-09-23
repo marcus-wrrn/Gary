@@ -21,6 +21,9 @@
 #define I2S_WS_PIN              GPIO_NUM_6
 #define I2S_DOUT_PIN            GPIO_NUM_7
 #define I2S_DIN_PIN             GPIO_NUM_NC     // no mic wired on this board
+#define I2S_DIN2_PIN            GPIO_NUM_NC
+#define I2S_BCLK2_PIN           GPIO_NUM_NC
+#define I2S_WS2_PIN             GPIO_NUM_NC
 
 // SPI (SD card)
 #define SPI_MISO_PIN            GPIO_NUM_37
@@ -42,6 +45,12 @@
 #define I2S_WS_PIN              GPIO_NUM_21
 #define I2S_DOUT_PIN            GPIO_NUM_47     // to the amplifier's DIN
 #define I2S_DIN_PIN             GPIO_NUM_17     // from the mic's SD
+
+// Third mic on the second I2S controller, a slave clocked by the pair above
+#define I2S_DIN2_PIN            GPIO_NUM_16     // from the third mic's SD
+#define I2S_BCLK2_PIN           GPIO_NUM_18     // jumpered to I2S_BCLK_PIN
+#define I2S_WS2_PIN             GPIO_NUM_5      // jumpered to I2S_WS_PIN
+
 
 // SDMMC (SD Card) - onboard slot, 1-bit mode only
 #define SDMMC_CMD_PIN           GPIO_NUM_38

@@ -35,6 +35,10 @@
 #define EYE_FOLLOW_OMEGA        11.0f  // spring stiffness in rad/s; settles in about 4 / this seconds
 #define EYE_FOLLOW_DEADBAND     0.2f   // change in gaze needed before the eye glances again
 #define EYE_FOLLOW_DWELL_MS     500    // minimum time between glances
+// How long a reading has to hold before the eye eases back towards centre on the same side.
+// The percent dips for a moment when echoes briefly win the correlation, and without this the
+// eye would follow each dip and snap straight back. Glances outwards or across stay immediate.
+#define EYE_FOLLOW_INWARD_MS    600
 #define EYE_FOLLOW_LINGER_MS    1200   // how long the eye keeps looking after the sound goes
 #define EYE_FOLLOW_REACH        0.35f  // gaze for a source only just off centre; side-on reaches 1
 
@@ -66,6 +70,7 @@ static struct {
     float gaze_vel;      // per second
     float gaze_target;   // where it is gliding to
     uint32_t glance_ms;  // tick of the last change to gaze_target
+    uint32_t inward_ms;  // tick the reading last stopped asking for a glance back towards centre
     uint32_t heard_ms;   // tick of the last block with a side to look at
     uint32_t step_ms;    // tick of the last spring step
 } eye_state;
@@ -239,10 +244,18 @@ static void eye_follow_cb(lv_timer_t* timer) {
         wanted = eye_state.gaze_target;
     }
 
-    if (fabsf(wanted - eye_state.gaze_target) >= EYE_FOLLOW_DEADBAND &&
-        lv_tick_diff(now, eye_state.glance_ms) >= EYE_FOLLOW_DWELL_MS) {
+    // Returning to centre once the sound has gone isn't held back, as the linger already waits
+    bool far = fabsf(wanted - eye_state.gaze_target) >= EYE_FOLLOW_DEADBAND;
+    bool inward = wanted * eye_state.gaze_target > 0.0f && fabsf(wanted) < fabsf(eye_state.gaze_target);
+    if (!far || !inward) {
+        eye_state.inward_ms = now;
+    }
+    bool held = !inward || lv_tick_diff(now, eye_state.inward_ms) >= EYE_FOLLOW_INWARD_MS;
+
+    if (far && held && lv_tick_diff(now, eye_state.glance_ms) >= EYE_FOLLOW_DWELL_MS) {
         eye_state.gaze_target = wanted;
         eye_state.glance_ms = now;
+        eye_state.inward_ms = now;
     }
 
     // Semi-implicit Euler, stable while OMEGA * dt stays well under 1
@@ -268,6 +281,7 @@ static esp_err_t eye_start_follow() {
     eye_state.gaze_vel = 0.0f;
     eye_state.gaze_target = 0.0f;
     eye_state.glance_ms = now;
+    eye_state.inward_ms = now;
     eye_state.heard_ms = now - EYE_FOLLOW_LINGER_MS;
     eye_state.step_ms = now;
     eye_place_pupil(0.0f);
