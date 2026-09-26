@@ -3,8 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "gpio.h"
-
-#define SD_CARD_MOUNT_POINT "/sdcard"
+#include "config.h"
 
 // Open file handle. Callers may stack-allocate this and pass its address around;
 // only sd_card_open and sd_card_close should touch the fields.

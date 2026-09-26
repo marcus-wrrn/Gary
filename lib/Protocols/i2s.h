@@ -2,10 +2,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "gpio.h"
-
-#define I2S_TONE_SAMPLE_RATE    48000
-#define I2S_TONE_BIT_DEPTH      32
-#define I2S_READ_TIMEOUT_MS     1000
+#include "config.h"
 
 esp_err_t i2s_init();
 esp_err_t i2s_play_tone(uint32_t freq_hz, uint32_t duration_ms);

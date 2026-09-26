@@ -7,8 +7,6 @@
 #include "esp_log.h"
 #include "driver/sdmmc_host.h"
 
-#define MAX_PATH_SIZE 128
-
 static const char* TAG = "SD_CARD";
 static sdmmc_card_t* card = NULL;
 
