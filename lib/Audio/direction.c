@@ -14,7 +14,8 @@
 
 // Where each mic sits, in metres, looking at the board from the front: x runs
 // from the left mic towards the right one (the sides direction_get() names)
-// and y points ahead, the way the display faces. Only the offsets between
+// and y points up. The mics stand upright in the display's plane, so a source
+// straight ahead of the display lies off that plane. Only the offsets between
 // mics matter, not where the origin is. The aux mic has to sit off the line
 // through the other two, or it adds nothing the pair doesn't already know.
 #define DIRECTION_LEFT_X        (-0.06f)
@@ -42,8 +43,8 @@
 #define DIRECTION_HOLD_US       (300 * 1000)
 
 // Bounds on the length of the fitted direction vector, which comes out at 1
-// for a source level with the mics. It shrinks as the source climbs overhead,
-// where the bearing stops meaning much, and grows past 1 when the pair delays
+// for a source in the mics' plane. It shrinks as the source swings round to
+// straight ahead of the display, where the bearing stops meaning much, and grows past 1 when the pair delays
 // contradict each other, which is echo or noise rather than a source.
 #define DIRECTION_FIT_MIN       0.3f
 #define DIRECTION_FIT_MAX       1.5f
@@ -115,6 +116,9 @@ static SoundDirection dir_current = SOUND_DIR_NONE;
 static int dir_percent = 0;
 static float dir_bearing = 0.0f;
 static bool dir_bearing_valid = false;
+static float dir_pos_x = 0.0f;
+static float dir_pos_y = 0.0f;
+static bool dir_pos_valid = false;
 
 // Copies one slot out, drops its mean and takes the first difference. The
 // difference tilts the spectrum towards the highs, which narrows the
@@ -252,6 +256,7 @@ void direction_reset() {
     dir_current = SOUND_DIR_NONE;
     dir_percent = 0;
     dir_bearing_valid = false;
+    dir_pos_valid = false;
     taskEXIT_CRITICAL(&dir_lock);
 }
 
@@ -300,8 +305,20 @@ void direction_process(const int32_t* frames, const int32_t* aux, size_t count) 
     float ux, uy;
     bool bearing_valid = false;
     float bearing = 0.0f;
+    // The fitted vector before normalising, which is where the source sits
+    // projected onto the mics' plane. Unlike the bearing it stays meaningful
+    // near straight ahead, where it shrinks towards (0, 0).
+    bool pos_valid = false;
+    float pos_x = 0.0f;
+    float pos_y = 0.0f;
     if (direction_fit(valid, lags, strengths, &ux, &uy)) {
         float length = hypotf(ux, uy);
+        if (length <= DIRECTION_FIT_MAX) {
+            float cap = length > 1.0f ? 1.0f / length : 1.0f;
+            pos_x = ux * cap;
+            pos_y = uy * cap;
+            pos_valid = true;
+        }
         if (length >= DIRECTION_FIT_MIN && length <= DIRECTION_FIT_MAX) {
             ux /= length;
             uy /= length;
@@ -311,6 +328,8 @@ void direction_process(const int32_t* frames, const int32_t* aux, size_t count) 
         }
     } else if (valid[PAIR_LEFT_RIGHT]) {
         score = lags[PAIR_LEFT_RIGHT] / dir_max_delay[PAIR_LEFT_RIGHT];
+        pos_x = fmaxf(-1.0f, fminf(1.0f, -score));
+        pos_valid = true;
     }
 
     SoundDirection next = dir_candidate;
@@ -349,6 +368,9 @@ void direction_process(const int32_t* frames, const int32_t* aux, size_t count) 
     dir_percent = percent;
     dir_bearing = bearing;
     dir_bearing_valid = bearing_valid;
+    dir_pos_x = pos_x;
+    dir_pos_y = pos_y;
+    dir_pos_valid = pos_valid;
     taskEXIT_CRITICAL(&dir_lock);
 }
 
@@ -375,6 +397,21 @@ bool direction_get_bearing(float* degrees) {
     bool valid = dir_bearing_valid;
     if (valid) {
         *degrees = dir_bearing;
+    }
+    taskEXIT_CRITICAL(&dir_lock);
+    return valid;
+}
+
+bool direction_get_position(float* x, float* y) {
+    if (x == NULL || y == NULL) {
+        return false;
+    }
+
+    taskENTER_CRITICAL(&dir_lock);
+    bool valid = dir_pos_valid;
+    if (valid) {
+        *x = dir_pos_x;
+        *y = dir_pos_y;
     }
     taskEXIT_CRITICAL(&dir_lock);
     return valid;

@@ -12,6 +12,7 @@
 #define EYE_LOWER_LID_H   35
 #define EYE_LID_PTS       40
 #define EYE_PUPIL_R       16
+#define EYE_PUPIL_GAP     EYE_STROKE  // kept between the pupil and the lid lines, clearing their stroke
 #define EYE_LASH_COUNT    10
 #define EYE_LASH_GAP      6
 #define EYE_LASH_LEN      10
@@ -33,14 +34,13 @@
 
 #define EYE_FOLLOW_TICK_MS      33     // about 30 fps; each step only redraws the pupil's own box
 #define EYE_FOLLOW_OMEGA        11.0f  // spring stiffness in rad/s; settles in about 4 / this seconds
-#define EYE_FOLLOW_DEADBAND     0.2f   // change in gaze needed before the eye glances again
+#define EYE_FOLLOW_DEADBAND     0.2f   // distance the gaze has to move before the eye glances again
 #define EYE_FOLLOW_DWELL_MS     500    // minimum time between glances
-// How long a reading has to hold before the eye eases back towards centre on the same side.
-// The percent dips for a moment when echoes briefly win the correlation, and without this the
+// How long a reading has to hold before the eye eases back towards centre in the same direction.
+// The reading dips for a moment when echoes briefly win the correlation, and without this the
 // eye would follow each dip and snap straight back. Glances outwards or across stay immediate.
 #define EYE_FOLLOW_INWARD_MS    600
 #define EYE_FOLLOW_LINGER_MS    1200   // how long the eye keeps looking after the sound goes
-#define EYE_FOLLOW_REACH        0.35f  // gaze for a source only just off centre; side-on reaches 1
 
 enum { EYE_LID_UPPER, EYE_LID_CREASE, EYE_LID_LOWER, EYE_LID_COUNT };
 
@@ -64,14 +64,18 @@ static struct {
     float pupil_y;
     float lid_h;  // signed: positive bows up, negative bows down
 
-    // EYE_MODE_FOLLOW_SOUND only
+    // EYE_MODE_FOLLOW_SOUND only. Gaze lives in the unit disc with y pointing down the screen,
+    // and the rim of the disc is the edge of the eye in that direction.
     lv_timer_t* follow;
-    float gaze;          // where the pupil is now
-    float gaze_vel;      // per second
-    float gaze_target;   // where it is gliding to
-    uint32_t glance_ms;  // tick of the last change to gaze_target
+    float gaze_x;        // where the pupil is now
+    float gaze_y;
+    float gaze_vel_x;    // per second
+    float gaze_vel_y;
+    float target_x;      // where it is gliding to
+    float target_y;
+    uint32_t glance_ms;  // tick of the last change to the target
     uint32_t inward_ms;  // tick the reading last stopped asking for a glance back towards centre
-    uint32_t heard_ms;   // tick of the last block with a side to look at
+    uint32_t heard_ms;   // tick of the last block with a source to look at
     uint32_t step_ms;    // tick of the last spring step
 } eye_state;
 
@@ -137,16 +141,51 @@ static void eye_update_pupil() {
     lv_obj_set_pos(eye_state.pupil, 0, pupil_top - top);
 }
 
-// t runs from -1 (left end of the path) to 1 (right end)
-static void eye_place_pupil(float t) {
-    eye_state.pupil_x = DISPLAY_H_RES / 2.0f + EYE_LOOK_X * t;
-    eye_state.pupil_y = DISPLAY_V_RES / 2.0f + EYE_LOOK_SAG * (1 - t * t);
+// dx and dy are the pupil centre's offset from the middle of the eye, in pixels
+static void eye_place_pupil(float dx, float dy) {
+    eye_state.pupil_x = DISPLAY_H_RES / 2.0f + dx;
+    eye_state.pupil_y = DISPLAY_V_RES / 2.0f + dy;
     eye_update_pupil();
 }
 
+// v runs from -1000 (left end of the path) to 1000 (right end)
 static void eye_pupil_anim_cb(void* var, int32_t v) {
     LV_UNUSED(var);
-    eye_place_pupil(v / 1000.0f);
+    float t = v / 1000.0f;
+    eye_place_pupil(EYE_LOOK_X * t, EYE_LOOK_SAG * (1 - t * t));
+}
+
+// How far the pupil's centre can travel from the middle of the eye along the unit vector (dx, dy)
+// before the pupil touches a lid. The open eye is the overlap of the crease's circle, centred
+// below, and the lower lid's, centred above. The pupil stays inside while its centre stays within
+// each circle's radius less its own, and that overlap is convex, so anything short of this is safe.
+static float eye_pupil_reach(float dx, float dy) {
+    const float heights[] = {EYE_CREASE_H, -EYE_LOWER_LID_H};
+    float reach = INFINITY;
+    for (size_t i = 0; i < sizeof(heights) / sizeof(heights[0]); i++) {
+        float h = fabsf(heights[i]);
+        float r = (EYE_HALF_WIDTH * EYE_HALF_WIDTH + h * h) / (2 * h);
+        float centre_y = heights[i] > 0 ? r - h : -(r - h);
+        float room = r - EYE_PUPIL_R - EYE_PUPIL_GAP;
+        // Where the ray from the middle leaves the shrunken circle: |t * d - c| = room
+        float along = dy * centre_y;
+        float t = along + sqrtf(along * along - centre_y * centre_y + room * room);
+        if (t < reach) reach = t;
+    }
+    return reach;
+}
+
+// Pixel offset of the pupil for a gaze in the unit disc
+static void eye_gaze_offset(float gx, float gy, float* dx, float* dy) {
+    float len = hypotf(gx, gy);
+    if (len < 1e-3f) {
+        *dx = 0.0f;
+        *dy = 0.0f;
+        return;
+    }
+    float reach = eye_pupil_reach(gx / len, gy / len);
+    *dx = gx * reach;
+    *dy = gy * reach;
 }
 
 // v runs from 0 (open) to 1000 (closed, lying on the bottom lid)
@@ -216,17 +255,6 @@ static void eye_start_look(uint32_t delay_ms) {
     lv_anim_start(&anim);
 }
 
-// Gaze towards the side the sound comes from, or 0 for none. A side always gets at least
-// EYE_FOLLOW_REACH, so a source only just off centre still gets a glance that reads as deliberate.
-static float eye_sound_gaze(SoundDirection* dir) {
-    *dir = direction_get();
-    if (*dir == SOUND_DIR_NONE) {
-        return 0.0f;
-    }
-    float reach = EYE_FOLLOW_REACH + (1.0f - EYE_FOLLOW_REACH) * direction_get_percent() / 100.0f;
-    return *dir == SOUND_DIR_LEFT ? -reach : reach;
-}
-
 static void eye_follow_cb(lv_timer_t* timer) {
     LV_UNUSED(timer);
     uint32_t now = lv_tick_get();
@@ -235,56 +263,74 @@ static void eye_follow_cb(lv_timer_t* timer) {
     // A late tick, e.g. after the animation was paused, would otherwise fling the pupil
     if (dt > 0.1f) dt = 0.1f;
 
-    SoundDirection dir;
-    float wanted = eye_sound_gaze(&dir);
-    if (dir != SOUND_DIR_NONE) {
+    float want_x = 0.0f;
+    float want_y = 0.0f;
+    float heard_x, heard_y;
+    if (direction_get_position(&heard_x, &heard_y)) {
+        // Taken as is: on the device, negating y (to turn up into screen-down) looked the wrong way
+        want_x = heard_x;
+        want_y = heard_y;
         eye_state.heard_ms = now;
     } else if (lv_tick_diff(now, eye_state.heard_ms) < EYE_FOLLOW_LINGER_MS) {
         // Keep looking at where the sound was for a moment before drifting back
-        wanted = eye_state.gaze_target;
+        want_x = eye_state.target_x;
+        want_y = eye_state.target_y;
     }
 
     // Returning to centre once the sound has gone isn't held back, as the linger already waits
-    bool far = fabsf(wanted - eye_state.gaze_target) >= EYE_FOLLOW_DEADBAND;
-    bool inward = wanted * eye_state.gaze_target > 0.0f && fabsf(wanted) < fabsf(eye_state.gaze_target);
+    bool far = hypotf(want_x - eye_state.target_x, want_y - eye_state.target_y) >= EYE_FOLLOW_DEADBAND;
+    bool inward = want_x * eye_state.target_x + want_y * eye_state.target_y > 0.0f &&
+                  hypotf(want_x, want_y) < hypotf(eye_state.target_x, eye_state.target_y);
     if (!far || !inward) {
         eye_state.inward_ms = now;
     }
     bool held = !inward || lv_tick_diff(now, eye_state.inward_ms) >= EYE_FOLLOW_INWARD_MS;
 
     if (far && held && lv_tick_diff(now, eye_state.glance_ms) >= EYE_FOLLOW_DWELL_MS) {
-        eye_state.gaze_target = wanted;
+        eye_state.target_x = want_x;
+        eye_state.target_y = want_y;
         eye_state.glance_ms = now;
         eye_state.inward_ms = now;
     }
 
     // Semi-implicit Euler, stable while OMEGA * dt stays well under 1
     const float w = EYE_FOLLOW_OMEGA;
-    float accel = w * w * (eye_state.gaze_target - eye_state.gaze) - 2.0f * w * eye_state.gaze_vel;
-    eye_state.gaze_vel += accel * dt;
-    eye_state.gaze += eye_state.gaze_vel * dt;
-    if (eye_state.gaze > 1.0f) eye_state.gaze = 1.0f;
-    if (eye_state.gaze < -1.0f) eye_state.gaze = -1.0f;
+    float accel_x = w * w * (eye_state.target_x - eye_state.gaze_x) - 2.0f * w * eye_state.gaze_vel_x;
+    float accel_y = w * w * (eye_state.target_y - eye_state.gaze_y) - 2.0f * w * eye_state.gaze_vel_y;
+    eye_state.gaze_vel_x += accel_x * dt;
+    eye_state.gaze_vel_y += accel_y * dt;
+    eye_state.gaze_x += eye_state.gaze_vel_x * dt;
+    eye_state.gaze_y += eye_state.gaze_vel_y * dt;
+    float len = hypotf(eye_state.gaze_x, eye_state.gaze_y);
+    if (len > 1.0f) {
+        eye_state.gaze_x /= len;
+        eye_state.gaze_y /= len;
+    }
 
     // The spring creeps by fractions of a pixel long after it has settled, and moving the clip box
     // redraws it, so the pupil is only placed when it would land on a different pixel
-    float x = DISPLAY_H_RES / 2.0f + EYE_LOOK_X * eye_state.gaze;
-    float y = DISPLAY_V_RES / 2.0f + EYE_LOOK_SAG * (1 - eye_state.gaze * eye_state.gaze);
+    float dx, dy;
+    eye_gaze_offset(eye_state.gaze_x, eye_state.gaze_y, &dx, &dy);
+    float x = DISPLAY_H_RES / 2.0f + dx;
+    float y = DISPLAY_V_RES / 2.0f + dy;
     if (lroundf(x) != lroundf(eye_state.pupil_x) || lroundf(y) != lroundf(eye_state.pupil_y)) {
-        eye_place_pupil(eye_state.gaze);
+        eye_place_pupil(dx, dy);
     }
 }
 
 static esp_err_t eye_start_follow() {
     uint32_t now = lv_tick_get();
-    eye_state.gaze = 0.0f;
-    eye_state.gaze_vel = 0.0f;
-    eye_state.gaze_target = 0.0f;
+    eye_state.gaze_x = 0.0f;
+    eye_state.gaze_y = 0.0f;
+    eye_state.gaze_vel_x = 0.0f;
+    eye_state.gaze_vel_y = 0.0f;
+    eye_state.target_x = 0.0f;
+    eye_state.target_y = 0.0f;
     eye_state.glance_ms = now;
     eye_state.inward_ms = now;
     eye_state.heard_ms = now - EYE_FOLLOW_LINGER_MS;
     eye_state.step_ms = now;
-    eye_place_pupil(0.0f);
+    eye_place_pupil(0.0f, 0.0f);
 
     // Blinking is left out here: the eye stays open while it listens
     eye_state.follow = lv_timer_create(eye_follow_cb, EYE_FOLLOW_TICK_MS, NULL);
