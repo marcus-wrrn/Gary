@@ -4,7 +4,6 @@
 
 // define all pins here
 // Digital / analog IO
-#define SSD1306_RST_PIN         GPIO_NUM_2
 #define TEST_BUTTON_PIN         GPIO_NUM_15
 #define MOISTURE_SENSOR_CHANNEL ADC_CHANNEL_0   // GPIO1
 #define THERMISTOR_CHANNEL      ADC_CHANNEL_5   // GPIO6
@@ -35,6 +34,7 @@
 #define SPI_MISO_PIN            GPIO_NUM_13
 #define SPI_DISPLAY_DC_PIN      GPIO_NUM_9
 #define DISPLAY_RST_PIN         GPIO_NUM_8
+#define DISPLAY_BL_PIN          GPIO_NUM_2      // to the module's LED pin, high = on
 
 // I2S tone playback
 #define I2S_TONE_SAMPLE_RATE    48000
@@ -72,3 +72,7 @@
 #define DISPLAY_V_RES           320
 // Set to 1 to flip the image top to bottom, e.g. when the module is mounted upside down
 #define DISPLAY_FLIP_VERTICAL   0
+
+// Backlight PWM. 5 kHz is well above visible flicker and leaves room for 10-bit duty.
+#define DISPLAY_BL_PWM_FREQ_HZ  5000
+#define DISPLAY_BL_DEFAULT_PCT  100

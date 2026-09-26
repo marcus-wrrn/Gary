@@ -4,11 +4,18 @@
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "driver/ledc.h"
 #include "spi.h"
 #include "src/draw/sw/lv_draw_sw_utils.h"
 
 // Must stay within max_transfer_sz in spi_init(), since each flush is sent as one transaction
 #define DISPLAY_DRAW_BUF_SIZE (DISPLAY_H_RES * 48 * 2)
+
+#define DISPLAY_BL_LEDC_MODE    LEDC_LOW_SPEED_MODE
+#define DISPLAY_BL_LEDC_TIMER   LEDC_TIMER_0
+#define DISPLAY_BL_LEDC_CHANNEL LEDC_CHANNEL_0
+#define DISPLAY_BL_DUTY_RES     LEDC_TIMER_10_BIT
+#define DISPLAY_BL_DUTY_MAX     ((1U << DISPLAY_BL_DUTY_RES) - 1)
 
 static const char* TAG = "DISPLAY";
 static lv_display_t* display = NULL;
@@ -37,7 +44,54 @@ static void display_hw_reset() {
     vTaskDelay(pdMS_TO_TICKS(150));
 }
 
+// Hands the backlight pin from plain GPIO over to LEDC, starting dark
+static esp_err_t display_backlight_init() {
+    ledc_timer_config_t timer_cfg = {
+        .speed_mode = DISPLAY_BL_LEDC_MODE,
+        .duty_resolution = DISPLAY_BL_DUTY_RES,
+        .timer_num = DISPLAY_BL_LEDC_TIMER,
+        .freq_hz = DISPLAY_BL_PWM_FREQ_HZ,
+        .clk_cfg = LEDC_AUTO_CLK,
+    };
+    esp_err_t err = ledc_timer_config(&timer_cfg);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to configure backlight timer");
+        return err;
+    }
+
+    ledc_channel_config_t channel_cfg = {
+        .gpio_num = DISPLAY_BL_PIN,
+        .speed_mode = DISPLAY_BL_LEDC_MODE,
+        .channel = DISPLAY_BL_LEDC_CHANNEL,
+        .timer_sel = DISPLAY_BL_LEDC_TIMER,
+        .duty = 0,
+        .hpoint = 0,
+    };
+    err = ledc_channel_config(&channel_cfg);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to configure backlight channel");
+    }
+    return err;
+}
+
+esp_err_t display_set_brightness(uint8_t percent) {
+    if (percent > 100) {
+        percent = 100;
+    }
+    uint32_t duty = (DISPLAY_BL_DUTY_MAX * percent) / 100;
+    esp_err_t err = ledc_set_duty(DISPLAY_BL_LEDC_MODE, DISPLAY_BL_LEDC_CHANNEL, duty);
+    if (err != ESP_OK) {
+        return err;
+    }
+    return ledc_update_duty(DISPLAY_BL_LEDC_MODE, DISPLAY_BL_LEDC_CHANNEL);
+}
+
 esp_err_t display_init() {
+    esp_err_t err = display_backlight_init();
+    if (err != ESP_OK) {
+        return err;
+    }
+
     display_hw_reset();
 
     lv_init();

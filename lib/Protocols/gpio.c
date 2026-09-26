@@ -89,7 +89,7 @@ esp_err_t gpio_read_thermistor(float* temp_c) {
 }
 
 esp_err_t gpio_init_digital() {
-    uint64_t output_pins = (1ULL << SSD1306_RST_PIN)
+    uint64_t output_pins = (1ULL << DISPLAY_BL_PIN)
                          | (1ULL << SPI_DISPLAY_DC_PIN)
                          | (1ULL << DISPLAY_RST_PIN);
 
@@ -105,6 +105,8 @@ esp_err_t gpio_init_digital() {
         ESP_LOGE(TAG, "Failed to initialize GPIO Output pins");
         return err;
     }
+    // Keep the backlight dark until display_init() has reset the panel and drawn a frame
+    gpio_set_level(DISPLAY_BL_PIN, 0);
 
     io_conf.pin_bit_mask = (1ULL << TEST_BUTTON_PIN);
     io_conf.mode = GPIO_MODE_INPUT;

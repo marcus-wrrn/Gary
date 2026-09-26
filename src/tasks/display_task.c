@@ -123,6 +123,14 @@ esp_err_t start_display_task(DisplayState display_state) {
     }
     state = display_state;
 
+    // Push the first frame out before lighting the panel, so the power-on garbage in GRAM is never seen
+    lv_refr_now(NULL);
+    err = display_set_brightness(DISPLAY_BL_DEFAULT_PCT);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to turn on backlight: %s", esp_err_to_name(err));
+        return err;
+    }
+
     display_queue = xQueueCreate(DISPLAY_QUEUE_LENGTH, sizeof(struct display_task_data_t));
     if (display_queue == NULL) {
         ESP_LOGE(TAG, "Failed to create display queue");
