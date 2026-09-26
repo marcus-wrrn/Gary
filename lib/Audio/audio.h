@@ -3,11 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "esp_err.h"
-
-// Capture format for the mic. The INMP441 clocks 24-bit samples inside 32-bit
-// slots, so the bus stays 32 bits wide no matter how little of it carries data.
-#define MIC_SAMPLE_RATE     16000
-#define MIC_BIT_DEPTH       32
+#include "config.h"
 
 // Bars in the spectrum snapshot, log-spaced across the audible range so the
 // crowded low end gets as many as the sparse top octave.

@@ -1,12 +1,7 @@
 #pragma once
 #include "esp_err.h"
 #include "lvgl.h"
-
-#define DISPLAY_H_RES   240
-#define DISPLAY_V_RES   320
-
-// Set to 1 to flip the image top to bottom, e.g. when the module is mounted upside down
-#define DISPLAY_FLIP_VERTICAL   0
+#include "config.h"
 
 // Requires spi_init() to have been called first. Also calls lv_init().
 esp_err_t display_init();

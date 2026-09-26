@@ -4,6 +4,7 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "esp_timer.h"
+#include "config.h"
 
 // Matches the mic's block, so one block is one estimate: 16 ms at 16 kHz
 #define DIRECTION_BLOCK         256
@@ -11,19 +12,6 @@
 #define DIRECTION_SOUND_SPEED   343.0f
 // Same meaning as MIC_FULL_SCALE in audio.c
 #define DIRECTION_FULL_SCALE    8388608.0f
-
-// Where each mic sits, in metres, looking at the board from the front: x runs
-// from the left mic towards the right one (the sides direction_get() names)
-// and y points up. The mics stand upright in the display's plane, so a source
-// straight ahead of the display lies off that plane. Only the offsets between
-// mics matter, not where the origin is. The aux mic has to sit off the line
-// through the other two, or it adds nothing the pair doesn't already know.
-#define DIRECTION_LEFT_X        (-0.06f)
-#define DIRECTION_LEFT_Y        0.0f
-#define DIRECTION_RIGHT_X       0.06f
-#define DIRECTION_RIGHT_Y       0.0f
-#define DIRECTION_AUX_X         0.0f
-#define DIRECTION_AUX_Y         (-0.05f)
 
 #define DIRECTION_LAG_LIMIT     20
 

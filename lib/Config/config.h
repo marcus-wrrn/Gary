@@ -51,3 +51,24 @@
 #define THERMISTOR_NOMINAL_OHMS 10000.0f        // resistance at 25C
 #define THERMISTOR_NOMINAL_C    25.0f
 #define THERMISTOR_BETA         3950.0f
+
+// Mic capture format. The INMP441 clocks 24-bit samples inside 32-bit slots,
+// so the bus stays 32 bits wide no matter how little of it carries data.
+#define MIC_SAMPLE_RATE         16000
+#define MIC_BIT_DEPTH           32
+
+// Mic positions in metres, facing the board: x is left-to-right, y is up.
+// Only the offsets between mics matter. The aux mic must sit off the line
+// through the other two, or it adds no information.
+#define DIRECTION_LEFT_X        (-0.06f)
+#define DIRECTION_LEFT_Y        0.0f
+#define DIRECTION_RIGHT_X       0.06f
+#define DIRECTION_RIGHT_Y       0.0f
+#define DIRECTION_AUX_X         0.0f
+#define DIRECTION_AUX_Y         (-0.05f)
+
+// Display module resolution/orientation
+#define DISPLAY_H_RES           240
+#define DISPLAY_V_RES           320
+// Set to 1 to flip the image top to bottom, e.g. when the module is mounted upside down
+#define DISPLAY_FLIP_VERTICAL   0
