@@ -5,22 +5,12 @@
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
 #include "esp_log.h"
-
-#ifdef HELTEC_BOARD
-#include "driver/sdspi_host.h"
-#include "driver/spi_common.h"
-#else
 #include "driver/sdmmc_host.h"
-#endif
 
 #define MAX_PATH_SIZE 128
 
 static const char* TAG = "SD_CARD";
 static sdmmc_card_t* card = NULL;
-
-#ifdef HELTEC_BOARD
-static sdmmc_host_t host = SDSPI_HOST_DEFAULT();
-#endif
 
 esp_err_t sd_card_init() {
     if (card != NULL) {
@@ -33,31 +23,6 @@ esp_err_t sd_card_init() {
         .allocation_unit_size = 32 * 1024
     };
 
-    esp_err_t ret;
-#ifdef HELTEC_BOARD
-    spi_bus_config_t bus_cfg = {
-        .mosi_io_num = SPI_MOSI_PIN,
-        .miso_io_num = SPI_MISO_PIN,
-        .sclk_io_num = SPI_SCLK_PIN,
-        .quadwp_io_num = -1,
-        .quadhd_io_num = -1,
-        .max_transfer_sz = 4000,
-    };
-    ret = spi_bus_initialize(host.slot, &bus_cfg, SDSPI_DEFAULT_DMA);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Unable to initialize SPI bus");
-        return ret;
-    }
-
-    sdspi_device_config_t slot_cfg = SDSPI_DEVICE_CONFIG_DEFAULT();
-    slot_cfg.gpio_cs = SPI_CS_PIN;
-    slot_cfg.host_id = host.slot;
-
-    ret = esp_vfs_fat_sdspi_mount(SD_CARD_MOUNT_POINT, &host, &slot_cfg, &mount_cfg, &card);
-    if (ret != ESP_OK) {
-        spi_bus_free(host.slot);
-    }
-#else
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
 
     sdmmc_slot_config_t slot_cfg = SDMMC_SLOT_CONFIG_DEFAULT();
@@ -67,9 +32,7 @@ esp_err_t sd_card_init() {
     slot_cfg.d0 = SDMMC_D0_PIN;
     slot_cfg.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
 
-    ret = esp_vfs_fat_sdmmc_mount(SD_CARD_MOUNT_POINT, &host, &slot_cfg, &mount_cfg, &card);
-#endif
-
+    esp_err_t ret = esp_vfs_fat_sdmmc_mount(SD_CARD_MOUNT_POINT, &host, &slot_cfg, &mount_cfg, &card);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Unable to mount SD card (%s)", esp_err_to_name(ret));
         card = NULL;
@@ -91,10 +54,6 @@ esp_err_t sd_card_deinit() {
         return ret;
     }
     card = NULL;
-
-#ifdef HELTEC_BOARD
-    spi_bus_free(host.slot);
-#endif
     return ESP_OK;
 }
 

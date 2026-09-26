@@ -34,13 +34,9 @@ esp_err_t gpio_adc_oneshot_read(adc_channel_t channel, int* level) {
 }
 
 esp_err_t gpio_init_digital() {
-    uint64_t output_pins = (1ULL << SSD1306_RST_PIN);
-#ifdef HELTEC_BOARD
-    // Vext only exists on the Heltec board
-    output_pins |= (1ULL << VEXT_PIN);
-#else
-    output_pins |= (1ULL << SPI_DISPLAY_DC_PIN) | (1ULL << DISPLAY_RST_PIN);
-#endif
+    uint64_t output_pins = (1ULL << SSD1306_RST_PIN)
+                         | (1ULL << SPI_DISPLAY_DC_PIN)
+                         | (1ULL << DISPLAY_RST_PIN);
 
     gpio_config_t io_conf = {
         .pin_bit_mask = output_pins,

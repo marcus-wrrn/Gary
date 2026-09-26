@@ -50,10 +50,6 @@ The slot is wired for the SDMMC peripheral in 1-bit mode, not SPI.
 | CMD | 38 |
 | DATA0 | 40 |
 
-Note: this differs from [lib/SD_Card/sd_card.h](lib/SD_Card/sd_card.h), which targets the
-Heltec board over SPI (MISO 37 / MOSI 35 / SCLK 36 / CS 34). Those pins are
-unavailable here — see "Reserved" below.
-
 ## On-board I/O
 
 | Function | GPIO |
@@ -80,14 +76,5 @@ unavailable here — see "Reserved" below.
 
 ADC1 channels (safe to use while Wi-Fi is on) land on GPIO 1–10, so with the camera
 attached only **GPIO1 (ADC1_CH0), GPIO2 (ADC1_CH1) and GPIO3 (ADC1_CH2)** remain for
-analog input. The moisture sensor currently uses `ADC_CHANNEL_4` (GPIO5) in
-[lib/Protocols/gpio.h](lib/Protocols/gpio.h) — that pin is the camera SIOC line on this
-board and must be remapped before porting.
-
-## Porting notes for this project
-
-- I2C display (17/18) collides with camera D6/D5 — move to free pins, e.g. 1/2 or 41/42.
-- I2S speaker (4/6/7) collides with SIOD/VSYNC/HREF — move to e.g. 14/21/47.
-- `VEXT_PIN` (36) and the SPI SD pins are Heltec-only; both fall in the PSRAM range here.
-- Keep pin macros per-board (e.g. `#ifdef CONFIG_IDF_TARGET_ESP32S3`) rather than editing
-  the shared headers in place.
+analog input. The moisture sensor uses `ADC_CHANNEL_0` (GPIO1), set in
+[lib/Config/config.h](lib/Config/config.h).
