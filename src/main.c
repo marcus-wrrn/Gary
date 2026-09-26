@@ -14,6 +14,7 @@
 #include "eye.h"
 
 #define DEBOUNCE_DELAY_US 200000ULL
+#define THERMISTOR_LOG_INTERVAL_US 5000000ULL
 
 static const char* TAG = "INIT";
 
@@ -117,6 +118,8 @@ void app_main() {
     PlantState state = plant_get_current_state();
     (void)state;
     bool play_animation = true;
+    float temperature = 0.0f;
+    uint64_t last_temp_log = 0;
 
     while (1) {
         if (xQueueReceive(button_queue, &button_flag, 0)) {
@@ -141,6 +144,17 @@ void app_main() {
             ESP_LOGE(TAG, "Invalid read of moisture sensor");
         }
         // ESP_LOGI(TAG, "Moisture Level: %d", moisture_level);
+
+        uint64_t now = esp_timer_get_time();
+        if (now - last_temp_log >= THERMISTOR_LOG_INTERVAL_US) {
+            last_temp_log = now;
+            err = gpio_read_thermistor(&temperature);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "Invalid read of thermistor: %s", esp_err_to_name(err));
+            } else {
+                ESP_LOGI(TAG, "Temperature: %.2f C", temperature);
+            }
+        }
 
         // int len = snprintf(disp_buffer, sizeof(disp_buffer), "Moisture Level: %d", moisture_level);
         // clear_display();

@@ -8,11 +8,9 @@
 #include "direction.h"
 #include "i2s.h"
 #include "esp_log.h"
-#include "esp_timer.h"
 
 #define STREAM_BUFFER_SIZE  4096
 #define MIC_FRAMES_PER_READ 256
-#define MIC_LOG_INTERVAL_US (1000 * 1000)
 #define MIC_FFT_SIZE        MIC_FRAMES_PER_READ
 #define MIC_FULL_SCALE      8388608.0f
 
@@ -28,15 +26,6 @@
 
 static const char* TAG = "AUDIO";
 static uint8_t stream_buf[STREAM_BUFFER_SIZE];
-
-// Both WS slots are measured because only the one the mic is strapped to
-// carries data; the other floats, and comparing the two is what identifies
-// which is which without having to inspect the wiring.
-typedef struct {
-    int32_t peak;
-    int64_t total;
-    uint32_t dead;
-} slot_stats_t;
 
 static int32_t mic_buf[MIC_FRAMES_PER_READ * 2];
 // The third mic's controller, same layout, with the mic on the left slot
@@ -56,12 +45,7 @@ static uint8_t mic_level_right;
 static bool mic_spectrum_valid = false;
 
 static bool mic_running = false;
-static int64_t mic_window_start_us = 0;
-static slot_stats_t mic_left;
-static slot_stats_t mic_right;
-static slot_stats_t mic_aux;
 static bool mic_has_aux = false;
-static uint32_t mic_frames = 0;
 
 typedef struct {
     uint32_t sample_rate;
@@ -250,32 +234,6 @@ static esp_err_t play_wav(const char* filename) {
     return close_ret;
 }
 
-static void mic_reset_window() {
-    memset(&mic_left, 0, sizeof(mic_left));
-    memset(&mic_right, 0, sizeof(mic_right));
-    memset(&mic_aux, 0, sizeof(mic_aux));
-    mic_frames = 0;
-    mic_window_start_us = esp_timer_get_time();
-}
-
-static void mic_accumulate(slot_stats_t* stats, int32_t word) {
-    // The mic left-justifies its 24 bits in the slot, so the low byte is
-    // padding that has to be shifted off before the value means anything.
-    int32_t sample = word >> 8;
-    int32_t magnitude = (sample < 0) ? -sample : sample;
-
-    if (magnitude > stats->peak) {
-        stats->peak = magnitude;
-    }
-    stats->total += magnitude;
-
-    // An undriven slot reads as all zeros or all ones, so counting the samples
-    // that sit at those values separates a silent mic from an absent one.
-    if (magnitude <= 1) {
-        stats->dead++;
-    }
-}
-
 // Log-spaced band edges over bins 1..MIC_FFT_SIZE / 2, skipping bin 0 because
 // DC carries the mic's standing offset rather than anything audible.
 static void mic_build_bands() {
@@ -285,9 +243,6 @@ static void mic_build_bands() {
     for (size_t i = 0; i <= MIC_BAND_COUNT; i++) {
         float edge = lowest * powf(highest / lowest, (float)i / (float)MIC_BAND_COUNT);
         size_t bin = (size_t)lroundf(edge);
-        // Log spacing collapses at the bottom, where there are fewer bins than
-        // bands, so each edge is nudged past the one before it. There are more
-        // bins than bands overall, so this always has room to give.
         if (i > 0 && bin <= mic_band_edges[i - 1]) {
             bin = (size_t)mic_band_edges[i - 1] + 1;
         }
@@ -429,7 +384,6 @@ esp_err_t mic_start() {
 
     mic_has_aux = i2s_has_aux();
     mic_build_bands();
-    mic_reset_window();
     direction_reset();
     mic_running = true;
     ESP_LOGI(TAG, "Mic listening: %u Hz, %u-bit, %s",
@@ -502,36 +456,9 @@ esp_err_t mic_poll() {
         }
     }
 
-    for (size_t i = 0; i < frames; i++) {
-        mic_accumulate(&mic_left, mic_buf[i * 2]);
-        mic_accumulate(&mic_right, mic_buf[i * 2 + 1]);
-        if (aux != NULL) {
-            mic_accumulate(&mic_aux, aux[i * 2]);
-        }
-    }
-    mic_frames += frames;
-
     mic_update_spectrum(frames);
     direction_process(mic_buf, aux, frames);
 
-    if (esp_timer_get_time() - mic_window_start_us < MIC_LOG_INTERVAL_US) {
-        return ESP_OK;
-    }
-
-    if (mic_frames > 0) {
-        ESP_LOGI(TAG, "Mic %u frames | L: peak %ld avg %ld dead %u%% | R: peak %ld avg %ld dead %u%% | A: peak %ld avg %ld dead %u%%",
-                 (unsigned)mic_frames,
-                 (long)mic_left.peak, (long)(mic_left.total / mic_frames),
-                 (unsigned)(mic_left.dead * 100 / mic_frames),
-                 (long)mic_right.peak, (long)(mic_right.total / mic_frames),
-                 (unsigned)(mic_right.dead * 100 / mic_frames),
-                 (long)mic_aux.peak, (long)(mic_aux.total / mic_frames),
-                 (unsigned)(mic_aux.dead * 100 / mic_frames));
-    } else {
-        ESP_LOGW(TAG, "Mic returned no frames");
-    }
-
-    mic_reset_window();
     return ESP_OK;
 }
 
