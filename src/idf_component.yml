@@ -1,0 +1,4 @@
+dependencies:
+  idf: ">=5.0"
+  # VADNet (voice activity detection) through the ESP-SR audio front end
+  espressif/esp-sr: "^2.5.5"

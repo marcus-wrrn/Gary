@@ -5,3 +5,4 @@
 .vscode/ipch
 .vscode/*
 build/*
+managed_components/
