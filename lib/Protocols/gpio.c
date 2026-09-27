@@ -38,6 +38,12 @@ esp_err_t gpio_init_adc() {
         return res;
     }
 
+    res = adc_oneshot_config_channel(adc1, LIGHT_SENSOR_CHANNEL, &config);
+    if (res != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize light sensor ADC channel");
+        return res;
+    }
+
     adc_cali_curve_fitting_config_t cali_cfg = {
         .unit_id = ADC_UNIT_1,
         .chan = THERMISTOR_CHANNEL,

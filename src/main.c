@@ -14,7 +14,7 @@
 #include "eye.h"
 
 #define DEBOUNCE_DELAY_US 200000ULL
-#define THERMISTOR_LOG_INTERVAL_US 5000000ULL
+#define SENSOR_LOG_INTERVAL_US 5000000ULL
 
 static const char* TAG = "INIT";
 
@@ -115,11 +115,12 @@ void app_main() {
     }
 
     int moisture_level = 0;
+    int light_level = 0;
     PlantState state = plant_get_current_state();
     (void)state;
     bool play_animation = true;
     float temperature = 0.0f;
-    uint64_t last_temp_log = 0;
+    uint64_t last_sensor_log = 0;
 
     while (1) {
         if (xQueueReceive(button_queue, &button_flag, 0)) {
@@ -137,17 +138,21 @@ void app_main() {
             ESP_LOGI(TAG, "Button pressed, display state %d", display_state);
         }
 
-
-
         err = gpio_adc_oneshot_read(MOISTURE_SENSOR_CHANNEL, &moisture_level);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Invalid read of moisture sensor");
         }
         // ESP_LOGI(TAG, "Moisture Level: %d", moisture_level);
 
+        err = gpio_adc_oneshot_read(LIGHT_SENSOR_CHANNEL, &light_level);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Invalid read of light sensor");
+        }
+
         uint64_t now = esp_timer_get_time();
-        if (now - last_temp_log >= THERMISTOR_LOG_INTERVAL_US) {
-            last_temp_log = now;
+        if (now - last_sensor_log >= SENSOR_LOG_INTERVAL_US) {
+            last_sensor_log = now;
+            ESP_LOGI(TAG, "Light Level: %d", light_level);
             err = gpio_read_thermistor(&temperature);
             if (err != ESP_OK) {
                 ESP_LOGE(TAG, "Invalid read of thermistor: %s", esp_err_to_name(err));
