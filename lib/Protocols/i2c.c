@@ -37,6 +37,10 @@ esp_err_t i2c_add_device_to_bus(i2c_master_dev_handle_t* dev_handle, uint16_t de
     return res;
 }
 
+esp_err_t i2c_probe(uint16_t device_addr) {
+    return i2c_master_probe(bus_handle, device_addr, 50);
+}
+
 void i2c_probe_addresses() {
     for (uint16_t i = 0x00; i <= 0xFF; i += 1) {
         esp_err_t res = i2c_master_probe(bus_handle, i, -1);

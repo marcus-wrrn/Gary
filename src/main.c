@@ -3,11 +3,12 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "gpio.h"
-// #include "i2c.h"
+#include "i2c.h"
 #include "i2s.h"
 // #include "ssd1306.h"
 #include "plant_state.h"
 #include "sd_card.h"
+#include "sensors.h"
 #include "spi.h"
 #include "tasks/display_task.h"
 #include "tasks/sound_task.h"
@@ -57,11 +58,17 @@ static esp_err_t setup_peripherals() {
         return ret;
     }
 
-    // ret = i2c_init();
-    // if (err != ESP_OK) {
-    //     ESP_LOGE(TAG, "Failed to initialize I2C");
-    //     return ret;
-    // }
+    ret = i2c_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize I2C");
+        return ret;
+    }
+
+    ret = sensors_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize sensors");
+        return ret;
+    }
 
     ret = sd_card_init();
     if (ret != ESP_OK) {
@@ -98,7 +105,7 @@ void app_main() {
     gpio_isr_handler_add(TEST_BUTTON_PIN, button_isr, NULL);
     bool button_flag;
 
-    DisplayState display_state = AUDIO_DIR;
+    DisplayState display_state = EYE;
     err = start_display_task(display_state);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start display task: %s", esp_err_to_name(err));
@@ -117,6 +124,8 @@ void app_main() {
     (void)state;
     bool play_animation = true;
     float temperature = 0.0f;
+    float sht31_temperature = 0.0f;
+    float humidity = 0.0f;
     uint64_t last_sensor_log = 0;
 
     while (1) {
@@ -135,13 +144,14 @@ void app_main() {
             ESP_LOGI(TAG, "Button pressed, display state %d", display_state);
         }
 
-        err = gpio_adc_oneshot_read(MOISTURE_SENSOR_CHANNEL, &moisture_level);
+        err = sensors_read_moisture(&moisture_level);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Invalid read of moisture sensor");
+        } else {
+            ESP_LOGI(TAG, "Moisture Level: %d", moisture_level);
         }
-        // ESP_LOGI(TAG, "Moisture Level: %d", moisture_level);
 
-        err = gpio_adc_oneshot_read(LIGHT_SENSOR_CHANNEL, &light_level);
+        err = sensors_read_light(&light_level);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Invalid read of light sensor");
         }
@@ -150,11 +160,18 @@ void app_main() {
         if (now - last_sensor_log >= SENSOR_LOG_INTERVAL_US) {
             last_sensor_log = now;
             ESP_LOGI(TAG, "Light Level: %d", light_level);
-            err = gpio_read_thermistor(&temperature);
+            err = sensors_read_thermistor(&temperature);
             if (err != ESP_OK) {
                 ESP_LOGE(TAG, "Invalid read of thermistor: %s", esp_err_to_name(err));
             } else {
                 ESP_LOGI(TAG, "Temperature: %.2f C", temperature);
+            }
+
+            err = sensors_read_sht31(&sht31_temperature, &humidity);
+            if (err == ESP_OK) {
+                ESP_LOGI(TAG, "SHT31: %.2f C, %.2f %%RH", sht31_temperature, humidity);
+            } else if (err != ESP_ERR_INVALID_STATE) {
+                ESP_LOGE(TAG, "Invalid read of SHT31: %s", esp_err_to_name(err));
             }
         }
 

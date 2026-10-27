@@ -16,6 +16,8 @@
 // SHT31 temp/humidity (SEN0331), shares the I2C bus above
 #define SHT31_ALERT_PIN         GPIO_NUM_7      // active high
 #define SHT31_RST_PIN           GPIO_NUM_3      // active low
+#define SHT31_I2C_ADDR          0x44            // ADDR pin low
+#define SHT31_I2C_ADDR_ALT      0x45            // ADDR pin high, tried if the first is silent
 
 // I2S (speaker + mic share BCLK/WS)
 #define I2S_BCLK_PIN            GPIO_NUM_14
@@ -23,8 +25,9 @@
 #define I2S_DOUT_PIN            GPIO_NUM_47     // to the amplifier's DIN
 #define I2S_DIN_PIN             GPIO_NUM_17     // from the mic's SD
 
-// Third mic on the second I2S controller, a slave clocked by the pair above
-#define I2S_DIN2_PIN            GPIO_NUM_16     // from the third mic's SD
+// Third mic on the second I2S controller, a slave clocked by the pair above.
+// Left unconnected so the controller is never set up and only the pair is read.
+#define I2S_DIN2_PIN            GPIO_NUM_NC     // disabled; GPIO_NUM_16 to bring the third mic back
 #define I2S_BCLK2_PIN           GPIO_NUM_18     // jumpered to I2S_BCLK_PIN
 #define I2S_WS2_PIN             GPIO_NUM_5      // jumpered to I2S_WS_PIN
 
