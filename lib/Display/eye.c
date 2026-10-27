@@ -23,16 +23,13 @@
 #define EYE_LOOK_MS       1500
 #define EYE_LOOK_PAUSE_MS 400
 
-// Blink: the inner lid line (EYE_LID_CREASE) bows down until it lies on the bottom lid, then lifts
-// again. The top arc stays put, so the moving line never crosses it. Blinks only start once the pupil
-// has reached either end of its path, and the pupil waits there until the blink has finished.
-#define EYE_BLINK_DOWN_MS  500   // closing
-#define EYE_BLINK_HOLD_MS  560   // held closed
-#define EYE_BLINK_UP_MS    500   // opening
+#define EYE_BLINK_DOWN_MS  500
+#define EYE_BLINK_HOLD_MS  560
+#define EYE_BLINK_UP_MS    500
 #define EYE_BLINK_PAUSE_MS 1500  // minimum pupil travel time (legs plus pauses) between blinks
 
 
-#define EYE_FOLLOW_TICK_MS      33     // about 30 fps; each step only redraws the pupil's own box
+#define EYE_FOLLOW_TICK_MS      33   
 #define EYE_FOLLOW_OMEGA        11.0f  // spring stiffness in rad/s; settles in about 4 / this seconds
 #define EYE_FOLLOW_DEADBAND     0.2f   // distance the gaze has to move before the eye glances again
 #define EYE_FOLLOW_DWELL_MS     500    // minimum time between glances
@@ -41,6 +38,9 @@
 // eye would follow each dip and snap straight back. Glances outwards or across stay immediate.
 #define EYE_FOLLOW_INWARD_MS    600
 #define EYE_FOLLOW_LINGER_MS    1200   // how long the eye keeps looking after the sound goes
+// The lids leave the pupil about a quarter of its sideways travel up and down, and a talker is
+// rarely far above or below the mics, so the vertical reading is scaled up to make it visible
+#define EYE_FOLLOW_GAIN_Y       2.5f
 
 enum { EYE_LID_UPPER, EYE_LID_CREASE, EYE_LID_LOWER, EYE_LID_COUNT };
 
@@ -60,23 +60,22 @@ static struct {
     lv_obj_t* pupil;
     int32_t look_to;         // end the current pupil leg heads for: -1000 (left) or 1000 (right)
     uint32_t since_blink_ms; // pupil travel time since the last blink
+    // position of the eye
     float pupil_x;
     float pupil_y;
-    float lid_h;  // signed: positive bows up, negative bows down
-
-    // EYE_MODE_FOLLOW_SOUND only. Gaze lives in the unit disc with y pointing down the screen,
-    // and the rim of the disc is the edge of the eye in that direction.
+    float lid_h;  
     lv_timer_t* follow;
-    float gaze_x;        // where the pupil is now
+    float gaze_x;       
     float gaze_y;
-    float gaze_vel_x;    // per second
+    float gaze_vel_x;    
     float gaze_vel_y;
-    float target_x;      // where it is gliding to
+    // where the eye is moving to
+    float target_x;      
     float target_y;
-    uint32_t glance_ms;  // tick of the last change to the target
-    uint32_t inward_ms;  // tick the reading last stopped asking for a glance back towards centre
-    uint32_t heard_ms;   // tick of the last block with a source to look at
-    uint32_t step_ms;    // tick of the last spring step
+    uint32_t glance_ms;
+    uint32_t inward_ms;  
+    uint32_t heard_ms;   
+    uint32_t step_ms;    
 } eye_state;
 
 static lv_obj_t* eye_create_line(lv_point_precise_t* pts, uint32_t count) {
@@ -155,10 +154,6 @@ static void eye_pupil_anim_cb(void* var, int32_t v) {
     eye_place_pupil(EYE_LOOK_X * t, EYE_LOOK_SAG * (1 - t * t));
 }
 
-// How far the pupil's centre can travel from the middle of the eye along the unit vector (dx, dy)
-// before the pupil touches a lid. The open eye is the overlap of the crease's circle, centred
-// below, and the lower lid's, centred above. The pupil stays inside while its centre stays within
-// each circle's radius less its own, and that overlap is convex, so anything short of this is safe.
 static float eye_pupil_reach(float dx, float dy) {
     const float heights[] = {EYE_CREASE_H, -EYE_LOWER_LID_H};
     float reach = INFINITY;
@@ -228,7 +223,6 @@ static void eye_start_blink() {
     lv_anim_start(&blink);
 }
 
-// Runs when the pupil reaches an end of its path: blink there if one is due, otherwise head back
 static void eye_look_done_cb(lv_anim_t* a) {
     LV_UNUSED(a);
     eye_state.look_to = -eye_state.look_to;
@@ -241,7 +235,6 @@ static void eye_look_done_cb(lv_anim_t* a) {
     }
 }
 
-// A single leg from the current end of the pupil path to eye_state.look_to
 static void eye_start_look(uint32_t delay_ms) {
     lv_anim_t anim;
     lv_anim_init(&anim);
@@ -269,10 +262,14 @@ static void eye_follow_cb(lv_timer_t* timer) {
     if (direction_get_position(&heard_x, &heard_y)) {
         // Taken as is: on the device, negating y (to turn up into screen-down) looked the wrong way
         want_x = heard_x;
-        want_y = heard_y;
+        want_y = heard_y * EYE_FOLLOW_GAIN_Y;
+        float heard_len = hypotf(want_x, want_y);
+        if (heard_len > 1.0f) {
+            want_x /= heard_len;
+            want_y /= heard_len;
+        }
         eye_state.heard_ms = now;
     } else if (lv_tick_diff(now, eye_state.heard_ms) < EYE_FOLLOW_LINGER_MS) {
-        // Keep looking at where the sound was for a moment before drifting back
         want_x = eye_state.target_x;
         want_y = eye_state.target_y;
     }

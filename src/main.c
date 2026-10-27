@@ -21,9 +21,6 @@ static const char* TAG = "INIT";
 static volatile uint64_t last_isr_time = 0;
 static QueueHandle_t button_queue;
 
-// Cycles the display through its states in order, wrapping at the end. Written
-// out rather than counted modulo so adding a state without extending the cycle
-// is a compiler warning instead of a state that never comes up.
 static DisplayState next_display_state(DisplayState current) {
     switch (current) {
     case EYE:

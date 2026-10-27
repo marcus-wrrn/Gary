@@ -13,6 +13,10 @@
 #define I2C_DISPLAY_SDA_PIN     GPIO_NUM_41
 #define I2C_DISPLAY_SCL_PIN     GPIO_NUM_42
 
+// SHT31 temp/humidity (SEN0331), shares the I2C bus above
+#define SHT31_ALERT_PIN         GPIO_NUM_7      // active high
+#define SHT31_RST_PIN           GPIO_NUM_3      // active low
+
 // I2S (speaker + mic share BCLK/WS)
 #define I2S_BCLK_PIN            GPIO_NUM_14
 #define I2S_WS_PIN              GPIO_NUM_21
@@ -61,18 +65,18 @@
 // Mic positions in metres, facing the board: x is left-to-right, y is up.
 // Only the offsets between mics matter. The aux mic must sit off the line
 // through the other two, or it adds no information.
-#define DIRECTION_LEFT_X        (-0.06f)
+#define DIRECTION_LEFT_X        (-0.026f)
 #define DIRECTION_LEFT_Y        0.0f
-#define DIRECTION_RIGHT_X       0.06f
+#define DIRECTION_RIGHT_X       0.026f
 #define DIRECTION_RIGHT_Y       0.0f
 #define DIRECTION_AUX_X         0.0f
-#define DIRECTION_AUX_Y         (-0.05f)
+#define DIRECTION_AUX_Y         (-0.11f)
 
 // Display module resolution/orientation
 #define DISPLAY_H_RES           240
 #define DISPLAY_V_RES           320
 // Set to 1 to flip the image top to bottom, e.g. when the module is mounted upside down
-#define DISPLAY_FLIP_VERTICAL   0
+#define DISPLAY_FLIP_VERTICAL   1
 
 // Backlight PWM. 5 kHz is well above visible flicker and leaves room for 10-bit duty.
 #define DISPLAY_BL_PWM_FREQ_HZ  5000

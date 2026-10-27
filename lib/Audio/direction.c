@@ -256,8 +256,8 @@ void direction_process(const int32_t* frames, const int32_t* aux, size_t count) 
     // The mics are mounted so the I2S right slot (1) sits on the left side as
     // seen from the display, so the slots are read into the opposite sides.
     // The aux mic is strapped to its controller's left slot.
-    float loudest = direction_prepare(frames, 1, dir_signal[MIC_LEFT]);
-    float db = direction_prepare(frames, 0, dir_signal[MIC_RIGHT]);
+    float loudest = direction_prepare(frames, 0, dir_signal[MIC_LEFT]);
+    float db = direction_prepare(frames, 1, dir_signal[MIC_RIGHT]);
     if (db > loudest) loudest = db;
     int pair_count = 1;
     if (aux != NULL) {

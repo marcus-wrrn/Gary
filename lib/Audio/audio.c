@@ -8,6 +8,7 @@
 #include "direction.h"
 #include "i2s.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 #define STREAM_BUFFER_SIZE  4096
 #define MIC_FRAMES_PER_READ 256
@@ -19,6 +20,9 @@
 
 #define MIC_LEVEL_FLOOR_DB      (-40.0f)
 #define MIC_LEVEL_CEIL_DB       (-30.0f)
+// Set to 0 to stop logging every mic's level, for checking each one is wired and hearing
+#define MIC_DEBUG_LOG           1
+#define MIC_DEBUG_LOG_US        (500 * 1000)
 #define RIFF_HEADER_SIZE    12
 #define CHUNK_HEADER_SIZE   8
 #define FMT_CHUNK_MIN_SIZE  16
@@ -276,6 +280,65 @@ static uint8_t mic_slot_level(size_t slot, size_t frames) {
     return (uint8_t)lroundf(mic_db_to_unit(db, MIC_LEVEL_FLOOR_DB, MIC_LEVEL_CEIL_DB) * 255.0f);
 }
 
+#if MIC_DEBUG_LOG
+// RMS in dB relative to full scale, the peak as a fraction of full scale, and
+// the first raw sample. A mic that isn't driving its line tends to show the
+// same raw value every block, often 0 or -1.
+typedef struct {
+    float db;
+    float peak;
+    int32_t raw;
+} mic_debug_t;
+
+static mic_debug_t mic_debug_measure(const int32_t* buf, size_t slot, size_t frames) {
+    float mean = 0.0f;
+    for (size_t i = 0; i < frames; i++) {
+        mean += (float)(buf[i * 2 + slot] >> 8);
+    }
+    mean /= (float)frames;
+
+    float sum_sq = 0.0f;
+    float peak = 0.0f;
+    for (size_t i = 0; i < frames; i++) {
+        float sample = ((float)(buf[i * 2 + slot] >> 8) - mean) / MIC_FULL_SCALE;
+        sum_sq += sample * sample;
+        if (fabsf(sample) > peak) peak = fabsf(sample);
+    }
+
+    mic_debug_t out = {
+        .db = 10.0f * log10f(sum_sq / (float)frames + 1e-18f),
+        .peak = peak,
+        .raw = buf[slot] >> 8,
+    };
+    return out;
+}
+
+static void mic_debug_log(const int32_t* aux, size_t frames) {
+    static int64_t last_us = 0;
+    int64_t now = esp_timer_get_time();
+    if (frames == 0 || now - last_us < MIC_DEBUG_LOG_US) {
+        return;
+    }
+    last_us = now;
+
+    mic_debug_t slot0 = mic_debug_measure(mic_buf, 0, frames);
+    mic_debug_t slot1 = mic_debug_measure(mic_buf, 1, frames);
+    if (aux == NULL) {
+        ESP_LOGI(TAG, "slot0 %6.1f dB pk %.3f raw %8ld | slot1 %6.1f dB pk %.3f raw %8ld | aux %s",
+                 slot0.db, slot0.peak, (long)slot0.raw, slot1.db, slot1.peak, (long)slot1.raw,
+                 mic_has_aux ? "short read" : "none");
+        return;
+    }
+    // Both aux slots, since a mic with its L/R pin strapped the wrong way talks on slot 1
+    mic_debug_t aux0 = mic_debug_measure(aux, 0, frames);
+    mic_debug_t aux1 = mic_debug_measure(aux, 1, frames);
+    ESP_LOGI(TAG, "slot0 %6.1f dB pk %.3f raw %8ld | slot1 %6.1f dB pk %.3f raw %8ld | "
+                  "aux0 %6.1f dB pk %.3f raw %8ld | aux1 %6.1f dB pk %.3f raw %8ld",
+             slot0.db, slot0.peak, (long)slot0.raw, slot1.db, slot1.peak, (long)slot1.raw,
+             aux0.db, aux0.peak, (long)aux0.raw, aux1.db, aux1.peak, (long)aux1.raw);
+}
+#endif
+
 // Transforms one full block and replaces the snapshot. A short block is left
 // alone rather than zero-padded, since the last snapshot is a better answer
 // than a spectrum smeared by the padding.
@@ -458,6 +521,9 @@ esp_err_t mic_poll() {
 
     mic_update_spectrum(frames);
     direction_process(mic_buf, aux, frames);
+#if MIC_DEBUG_LOG
+    mic_debug_log(aux, frames);
+#endif
 
     return ESP_OK;
 }

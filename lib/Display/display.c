@@ -19,6 +19,7 @@
 
 static const char* TAG = "DISPLAY";
 static lv_display_t* display = NULL;
+static uint8_t brightness_percent = 100;
 
 static uint32_t display_tick_cb(void) {
     return (uint32_t)(esp_timer_get_time() / 1000);
@@ -44,7 +45,6 @@ static void display_hw_reset() {
     vTaskDelay(pdMS_TO_TICKS(150));
 }
 
-// Hands the backlight pin from plain GPIO over to LEDC, starting dark
 static esp_err_t display_backlight_init() {
     ledc_timer_config_t timer_cfg = {
         .speed_mode = DISPLAY_BL_LEDC_MODE,
@@ -74,16 +74,26 @@ static esp_err_t display_backlight_init() {
     return err;
 }
 
-esp_err_t display_set_brightness(uint8_t percent) {
-    if (percent > 100) {
-        percent = 100;
-    }
+static esp_err_t display_backlight_apply(uint8_t percent) {
     uint32_t duty = (DISPLAY_BL_DUTY_MAX * percent) / 100;
     esp_err_t err = ledc_set_duty(DISPLAY_BL_LEDC_MODE, DISPLAY_BL_LEDC_CHANNEL, duty);
     if (err != ESP_OK) {
         return err;
     }
     return ledc_update_duty(DISPLAY_BL_LEDC_MODE, DISPLAY_BL_LEDC_CHANNEL);
+}
+
+esp_err_t display_set_brightness(uint8_t percent) {
+    if (percent > 100) {
+        percent = 100;
+    }
+    brightness_percent = percent;
+    return display_backlight_apply(percent);
+}
+
+// Turning the backlight back on restores the last brightness set
+esp_err_t display_set_backlight(bool on) {
+    return display_backlight_apply(on ? brightness_percent : 0);
 }
 
 esp_err_t display_init() {
@@ -129,7 +139,6 @@ esp_err_t display_show_image(const char* path) {
     }
 
     lv_obj_t* screen = lv_screen_active();
-    //lv_obj_set_style_bg_color(screen, lv_color_hex(0xffffff), 0);
     lv_obj_t* img = lv_image_create(screen);
     lv_image_set_src(img, path);
     lv_obj_center(img);
