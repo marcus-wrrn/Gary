@@ -528,19 +528,14 @@ esp_err_t mic_poll() {
     return ESP_OK;
 }
 
-esp_err_t play_track(const char* filename) {
-    // Retuning the shared clock means stopping RX first, so a mic that was
-    // listening gets paused for the length of the track and resumed after.
-    bool resume_mic = mic_running;
-    if (resume_mic) {
-        esp_err_t stop_ret = mic_stop();
-        if (stop_ret != ESP_OK) {
-            return stop_ret;
-        }
-    }
+// Retuning the shared clock means stopping RX first, so a mic that was
+// listening gets paused for the length of the playback and resumed after.
+static esp_err_t pause_mic(bool* resume_mic) {
+    *resume_mic = mic_running;
+    return mic_running ? mic_stop() : ESP_OK;
+}
 
-    esp_err_t ret = play_wav(filename);
-
+static esp_err_t resume_mic_after(bool resume_mic, esp_err_t ret) {
     if (resume_mic) {
         esp_err_t start_ret = mic_start();
         if (ret == ESP_OK) {
@@ -548,4 +543,22 @@ esp_err_t play_track(const char* filename) {
         }
     }
     return ret;
+}
+
+esp_err_t play_track(const char* filename) {
+    bool resume_mic;
+    esp_err_t ret = pause_mic(&resume_mic);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    return resume_mic_after(resume_mic, play_wav(filename));
+}
+
+esp_err_t play_beep(uint32_t freq_hz, uint32_t duration_ms) {
+    bool resume_mic;
+    esp_err_t ret = pause_mic(&resume_mic);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    return resume_mic_after(resume_mic, i2s_play_beep(freq_hz, duration_ms));
 }

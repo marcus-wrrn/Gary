@@ -5,7 +5,9 @@
 #include "esp_err.h"
 
 typedef enum Track {
-    MEEP = 0
+    MEEP = 0,
+    // First .wav in the SD card's root, or a beep when there isn't one
+    STARTUP
 } Track;
 
 typedef struct sound_task_data_t {

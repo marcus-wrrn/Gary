@@ -118,6 +118,11 @@ void app_main() {
         return;
     }
 
+    sound_task_data_t startup_sound = {
+        .track = STARTUP
+    };
+    xQueueSendToBack(sound_queue, &startup_sound, 0);
+
     int moisture_level = 0;
     int light_level = 0;
     PlantState state = plant_get_current_state();

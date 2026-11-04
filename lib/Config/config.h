@@ -78,9 +78,10 @@
 // Display module resolution/orientation
 #define DISPLAY_H_RES           240
 #define DISPLAY_V_RES           320
+
 // Set to 1 to flip the image top to bottom, e.g. when the module is mounted upside down
 #define DISPLAY_FLIP_VERTICAL   1
 
-// Backlight PWM. 5 kHz is well above visible flicker and leaves room for 10-bit duty.
+// Backlight PWM. 5 kHz is well above visible flicker
 #define DISPLAY_BL_PWM_FREQ_HZ  5000
 #define DISPLAY_BL_DEFAULT_PCT  100

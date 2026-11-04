@@ -1,6 +1,9 @@
 #include "sd_card.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <dirent.h>
 #include <sys/stat.h>
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
@@ -92,6 +95,46 @@ esp_err_t sd_card_get_file_size(const char* filename, size_t* size) {
 
     *size = (size_t)st.st_size;
     return ESP_OK;
+}
+
+esp_err_t sd_card_find_file(const char* dir, const char* ext, char* name, size_t name_len) {
+    if (ext == NULL || name == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char path[MAX_PATH_SIZE];
+    esp_err_t ret = build_path(dir, path, sizeof(path));
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    DIR* d = opendir(path);
+    if (d == NULL) {
+        ESP_LOGE(TAG, "Unable to open directory: %s", path);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    size_t ext_len = strlen(ext);
+    const char* sep = (dir[0] != '\0' && dir[strlen(dir) - 1] == '/') ? "" : "/";
+    ret = ESP_ERR_NOT_FOUND;
+
+    struct dirent* entry;
+    while ((entry = readdir(d)) != NULL) {
+        if (entry->d_type != DT_REG) {
+            continue;
+        }
+        size_t len = strlen(entry->d_name);
+        if (len < ext_len || strcasecmp(entry->d_name + len - ext_len, ext) != 0) {
+            continue;
+        }
+
+        int written = snprintf(name, name_len, "%s%s%s", dir, sep, entry->d_name);
+        ret = (written < 0 || (size_t)written >= name_len) ? ESP_ERR_INVALID_SIZE : ESP_OK;
+        break;
+    }
+
+    closedir(d);
+    return ret;
 }
 
 esp_err_t sd_card_read_file_into(const char* filename, uint8_t* buf, size_t buf_len, size_t* bytes_read) {

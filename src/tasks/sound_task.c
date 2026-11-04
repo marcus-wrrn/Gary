@@ -3,14 +3,32 @@
 #include "esp_log.h"
 #include "i2s.h"
 #include "audio.h"
+#include "sd_card.h"
 
 #define SOUND_TASK_STACK_SIZE   8192
 #define SOUND_TASK_PRIORITY     (tskIDLE_PRIORITY + 1)
 #define SOUND_TASK_CORE         0
 #define SOUND_QUEUE_LENGTH      8
 
+#define STARTUP_BEEP_FREQ_HZ    880
+#define STARTUP_BEEP_MS         300
+
 static const char* TAG = "SOUND_TASK";
 QueueHandle_t sound_queue = NULL;
+
+static esp_err_t play_startup_sound() {
+    char filename[MAX_PATH_SIZE];
+    if (sd_card_find_file("/", ".wav", filename, sizeof(filename)) == ESP_OK) {
+        esp_err_t err = play_track(filename);
+        if (err == ESP_OK) {
+            return ESP_OK;
+        }
+        ESP_LOGW(TAG, "Unable to play %s, falling back to a beep", filename);
+    } else {
+        ESP_LOGI(TAG, "No .wav on the SD card, beeping instead");
+    }
+    return play_beep(STARTUP_BEEP_FREQ_HZ, STARTUP_BEEP_MS);
+}
 
 static void sound_handle_message(const struct sound_task_data_t* msg) {
     ESP_LOGI(TAG, "Playing Track: %d", msg->track);
@@ -19,6 +37,9 @@ static void sound_handle_message(const struct sound_task_data_t* msg) {
     switch (msg->track) {
     case MEEP:
         //err = play_track("/plant/meep.wav");
+        break;
+    case STARTUP:
+        err = play_startup_sound();
         break;
     default:
         ESP_LOGW(TAG, "Unknown track: %d", msg->track);

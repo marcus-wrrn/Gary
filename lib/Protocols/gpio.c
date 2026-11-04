@@ -25,7 +25,7 @@ esp_err_t gpio_adc_config_channel(adc_channel_t channel) {
     };
     esp_err_t res = adc_oneshot_config_channel(adc1, channel, &config);
     if (res != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize ADC channel %d", channel);
+        ESP_LOGE(TAG, "Failed to initialize ADC channel1 %d", channel);
     }
     return res;
 }

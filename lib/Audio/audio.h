@@ -11,6 +11,9 @@
 
 esp_err_t play_track(const char* filename);
 
+// Square wave beep, borrowing the bus from the mic the same way play_track() does.
+esp_err_t play_beep(uint32_t freq_hz, uint32_t duration_ms);
+
 // Starts and stops draining the I2S RX channels, the main pair and the third
 // mic's together. They all share one clock with TX, so play_track() borrows
 // the bus while it runs and hands it back afterwards.
